@@ -1,0 +1,9 @@
+slug: rotate-grid
+title: Rotate the Board
+difficulty: easy
+topics: [matrix, arrays]
+function: rotateClockwise
+params:
+  - { name: grid, type: "int[][]" }
+returns: "int[][]"
+limits: { time_ms: 2000, memory_mb: 128 }

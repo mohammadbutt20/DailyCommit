@@ -2,6 +2,8 @@
 
 Daily Commit: a group coding-practice platform. Members solve a shared daily problem (Python/Java/C++) in a browser editor with sandboxed execution, keep a group streak alive, and compete on leaderboards. Current focus: the **P0 midpoint demo**, built as scaffolding for P1 (VS mode/ELO, SM-2, mock interviews, peer review, analytics, Discord bot).
 
+**Current state:** P0 slice 0 is built: Python only, dev login only, one app-wide timezone. Next slices (Java/C++, Discord OAuth, per-group timezone, VPS, load test) are listed in ARCHITECTURE.md §15; build each as its own change.
+
 **Read [ARCHITECTURE.md](ARCHITECTURE.md) before making structural changes.** It records every settled decision and why. If a change contradicts it, update ARCHITECTURE.md in the same change, or raise it with the user first.
 
 ## Stack
@@ -11,7 +13,8 @@ Next.js (App Router) + TypeScript + Tailwind + Monaco + TanStack Query · FastAP
 - `web/`: Next.js app. `web/src/lib/api/schema.ts` is **generated**; never hand-edit it.
 - `backend/src/dailycommit/`: one Python package with three entrypoints: `api/` (FastAPI), `jobs/worker.py` (executes submissions), `jobs/scheduler.py` (daily rollover cron).
   - `domain/`: pure business logic (streaks, daily pick, leaderboard, time math; later SM-2, ELO).
-  - `sandbox/`: Docker orchestration, harness/starter-code generation, output comparison.
+  - `services/`: DB/Redis operations shared by the three entrypoints (rollover, solves, leaderboard cache, events). `services/clock.py` is the only place that decides a group's timezone.
+  - `sandbox/`: Docker orchestration, language registry, harness/starter-code generation, output comparison.
   - `problems/`: CLI that validates and syncs `problems/` into the DB.
 - `sandbox/images/`: per-language sandbox Dockerfiles.
 - `problems/<slug>/`: `problem.yaml`, `statement.md`, `tests.json`, `solutions/ref.*`.
@@ -22,16 +25,21 @@ Next.js (App Router) + TypeScript + Tailwind + Monaco + TanStack Query · FastAP
 Run everything from **inside WSL** (Ubuntu), in the repo at `~/dev/DailyCommit`, not from PowerShell or `/mnt/c`.
 
 ```bash
+make demo             # first run: sandbox images, stack, migrations, problems, seed data
 make up               # start the whole stack (http://localhost:8080)
 make down
-make sandbox-images   # build python/java/cpp sandbox images
+make sandbox-images   # build the per-language sandbox images
 make migrate          # alembic upgrade head
-make sync-problems    # validate + load problems/ (runs reference solutions in the sandbox)
+make validate-problems  # check problems/ + run reference solutions (no DB writes)
+make sync-problems    # validate + load problems/ into the DB
 make seed             # demo users/group/history; use dev login to sign in
-make test             # backend unit + API tests
-make test-sandbox     # adversarial sandbox suite (needs Docker)
+make test             # backend unit tests
+make test-sandbox     # adversarial sandbox suite (needs Docker + sandbox images)
+make lint             # ruff + tsc
 make gen-api          # regenerate web/src/lib/api/schema.ts from FastAPI OpenAPI
 ```
+
+Backend unit tests also run without Docker: `cd backend && uv sync && uv run pytest`. They use a test-only `LocalProcessSandbox` (tests/conftest.py) that runs the real harness as a plain subprocess. Never use it outside tests.
 
 ## Invariants (do not break)
 1. **The API and worker never execute user code in-process.** User code runs only inside a sandbox container with the limits in ARCHITECTURE.md §5. Never loosen those flags (network, caps, read-only, pids, memory, user) without explicit approval.

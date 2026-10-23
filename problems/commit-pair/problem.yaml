@@ -1,0 +1,11 @@
+slug: commit-pair
+title: Commit Pair
+difficulty: easy
+topics: [arrays, hashing]
+function: commitPair
+params:
+  - { name: counts, type: "int[]" }
+  - { name: target, type: int }
+returns: "int[]"
+compare: unordered
+limits: { time_ms: 2000, memory_mb: 128 }

@@ -1,0 +1,4 @@
+# Containers run Linux: keep LF everywhere so scripts and Dockerfiles work.
+* text=auto eol=lf
+*.png binary
+*.pdf binary

@@ -1,0 +1,9 @@
+slug: merge-study-blocks
+title: Merge Study Blocks
+difficulty: medium
+topics: [sorting, intervals]
+function: mergeBlocks
+params:
+  - { name: blocks, type: "int[][]" }
+returns: "int[][]"
+limits: { time_ms: 2000, memory_mb: 128 }

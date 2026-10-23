@@ -1,0 +1,16 @@
+{
+	# Dev: plain HTTP on :8080. In prod this becomes the domain name and Caddy adds HTTPS.
+	auto_https off
+}
+
+:8080 {
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /ws {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

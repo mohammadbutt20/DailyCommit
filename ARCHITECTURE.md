@@ -6,6 +6,8 @@ Source documents: [`docs/Mohammad Project Proposal (1).pdf`](docs/) (PRD) and [`
 
 **Scope right now:** the P0 MVP for the midpoint demo (code execution, groups, daily problem, group streak, leaderboards), running on a laptop. Everything below is designed so P1 features and a VPS deployment slot in without rewrites.
 
+**Built so far (P0 slice 0):** Python only, dev login only, one app-wide timezone (`DAY_TIMEZONE`). Java/C++, Discord OAuth and per-group timezones are separate follow-up slices; see [§15](#15-build-status-and-slices). Where this document describes those, it is the target design.
+
 ---
 
 ## 1. System overview
@@ -96,6 +98,9 @@ backend/                      one Python project (uv), several entrypoints
     schemas/                  Pydantic request/response models
     domain/                   PURE logic, no I/O: streaks, daily_pick, leaderboard, timeutil
                               (P1: sm2, elo)
+    services/                 DB/Redis operations shared by api, worker and scheduler:
+                              clock (the day's timezone), daily, solves, rollover, leaderboard,
+                              events, testcases
     api/
       main.py                 FastAPI app
       routers/                auth, groups, problems, submissions, leaderboards
@@ -108,6 +113,7 @@ backend/                      one Python project (uv), several entrypoints
       backend.py              SandboxBackend interface + DockerSandbox implementation
       runner.py               orchestrates compile/run, parses harness output
       compare.py              exact / unordered / float-tolerance comparison
+      languages.py            registry of supported languages (image, harness, limits)
       codegen/                starter-code + harness templates per language
     problems/                 CLI: validate + sync problems/ → DB
     seed.py                   demo data
@@ -139,7 +145,7 @@ Numbers match the system map.
 4. **Grab next ticket.** A worker picks up the job, sets `status=running`, loads the code, the problem signature and the test inputs, and generates the harness for that language.
 5. **Run.** The worker creates a sandbox container (see §5), copies in the code, harness and **inputs only** with `put_archive`, starts it, and streams stdout.
 6. **Output.** The harness compiles (Java/C++), then runs tests sequentially. After each test it prints one line to the original stdout, prefixed with a per-run marker: `{"i": 3, "out": <json>, "ms": 12, "err": null}`. The user's own stdout/stderr is redirected and captured (truncated) separately.
-7. **Ring the bell.** For each line, the worker compares `out` to the expected output **it holds** (exact / unordered / float tolerance per problem), then publishes the per-test verdict on Redis channel `sub:{id}`.
+7. **Ring the bell.** For each line, the worker compares `out` to the expected output **it holds** (exact / unordered / float tolerance per problem), then publishes the per-test verdict on Redis channel `submission:{id}` (channel name = WebSocket topic name).
 8. **Bell heard.** Each API process runs one Redis pub/sub listener that fans messages out to its sockets subscribed to that topic.
 9. **Pushed live.** The browser renders test-by-test results.
 10. **Save final verdict.** The worker writes `submission_results` and the final `verdict`, `passed/total`, and `runtime_ms`. For an accepted `submit`, it also inserts `group_day_solves` for every group of that user whose today-problem (in the group's timezone) is this problem, invalidates leaderboard caches, and publishes to `group:{id}`.
@@ -280,7 +286,7 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 |---|---|
 | `GET /auth/discord/login` | Redirect to Discord (sets `state` cookie for CSRF) |
 | `GET /auth/discord/callback` | Exchange code, upsert user + identity, create session, redirect to `/groups` |
-| `POST /auth/dev-login {user_id}` | **ENV=dev only** (route not registered otherwise); log in as a seed user |
+| `GET /auth/dev/users`, `POST /auth/dev/login {name}` | **ENV=dev only** (routes not registered otherwise); list dev users / log in as any name (creates the user on first use) |
 | `POST /auth/logout` | Delete session |
 | `GET /me` | Current user + groups |
 | `POST /groups` | Create group (creator = leader) |
@@ -308,7 +314,7 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 { "topic": "group:7",       "event": "solve", "data": { "user_id": 5, "display_name": "…" } }
 ```
 
-The server checks authorization on subscribe: the submission's owner, or a member of the group. Topic names map 1:1 to Redis channels (`sub:{id}`, `group:{id}`; P1: `match:{id}`, `interview:{id}`).
+The server checks authorization on subscribe: the submission's owner, or a member of the group. Topic names are the Redis channel names (`submission:{id}`, `group:{id}`; P1: `match:{id}`, `interview:{id}`).
 
 The OpenAPI schema is the contract. `make gen-api` regenerates `web/src/lib/api/schema.ts`.
 
@@ -365,13 +371,16 @@ One-time setup:
 Daily loop:
 
 ```bash
-make sandbox-images   # build python/java/cpp sandbox images (first time + when images change)
+make demo             # first run: everything below in order
+make sandbox-images   # build the sandbox images (first time + when images change)
 make up               # docker compose up: caddy, web, api, worker, scheduler, postgres, redis
 make migrate          # alembic upgrade head
 make sync-problems    # load problems/ into the DB (validates with reference solutions)
 make seed             # demo users, a group, some history
 # open http://localhost:8080
 ```
+
+`make help` lists every target.
 
 The dev compose bind-mounts source for hot reload (`uvicorn --reload`, `next dev`, `arq --watch`).
 
@@ -401,16 +410,21 @@ The dev compose bind-mounts source for hot reload (`uvicorn --reload`, `next dev
 
 ---
 
-## 15. P0 build order (midpoint demo)
+## 15. Build status and slices
 
-1. WSL2 + Docker setup; compose skeleton (caddy, web, api, postgres, redis), `/health`, Alembic baseline.
-2. Auth: dev login first, then Discord OAuth.
-3. Problem format, loader and codegen; three seed problems.
-4. Sandbox images, harnesses, runner, adversarial tests.
-5. Submissions end to end: REST → arq → sandbox → pub/sub → WS → editor UI.
-6. Groups + invite codes.
-7. Daily problem, rollover job, streaks, leaderboards.
-8. `make seed` demo data + demo script in README.
+**Slice 0: P0 core (built).** Compose stack with Caddy, Alembic baseline, dev login, problem format + loader + five problems, Python sandbox + harness + runner, submissions end to end (REST → arq → sandbox → pub/sub → WS → editor UI), groups + invite codes, daily problem, rollover job, streaks, leaderboards, `make seed`, README demo script.
+
+Each later slice is independent and should land as its own change:
+
+| Slice | Work | Touch points |
+|---|---|---|
+| 1. Java + C++ | Images (temurin 21 + Gson, gcc + nlohmann/json), harness/starter codegen, compile step inside the container, `ref.java` / `ref.cpp` for every problem | `sandbox/codegen/`, `sandbox/languages.py`, `sandbox/images/`, Makefile `sandbox-images` |
+| 2. Discord OAuth | `/auth/discord/login` + `/callback` (state cookie), `discord` identities, avatar, login button | `api/auth/`, `config.py`, login page |
+| 3. Per-group timezone | `groups.timezone` column + migration, timezone picker on create, per-group day in `record_solves` | `services/clock.py` (`group_tz`), `services/solves.py` |
+| 4. VPS deploy | `compose.prod.yaml`, Caddy domain + HTTPS, production web build, backups, `SANDBOX_RUNTIME=runsc` | `infra/` |
+| 5. Load test | k6/Locust: queue throughput, p50/p95 verdict latency | new `loadtest/` |
+
+P1 features follow in PRD priority order, at the extension points in §11.
 
 ---
 
