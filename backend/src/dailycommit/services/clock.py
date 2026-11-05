@@ -1,16 +1,29 @@
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from functools import lru_cache
+from zoneinfo import ZoneInfo, available_timezones
 
-from dailycommit.config import settings
 from dailycommit.domain import timeutil
-from dailycommit.models import utcnow
+from dailycommit.models import Group, utcnow
 
 
-def group_tz(group_id: int | None = None) -> ZoneInfo:
-    """The timezone that defines a group's day. Single app-wide zone for now; per-group zones
-    are a later slice and only need to change this function (plus a column)."""
-    return settings.day_tz
+@lru_cache(maxsize=512)
+def _zone(name: str) -> ZoneInfo:
+    return ZoneInfo(name)
 
 
-def today(group_id: int | None = None, now: datetime | None = None) -> date:
-    return timeutil.local_day(now or utcnow(), group_tz(group_id))
+def group_tz(group: Group) -> ZoneInfo:
+    """The timezone that defines a group's day. The only place that decides it."""
+    return _zone(group.timezone)
+
+
+def today(group: Group, now: datetime | None = None) -> date:
+    return timeutil.local_day(now or utcnow(), group_tz(group))
+
+
+@lru_cache(maxsize=1)
+def valid_timezones() -> frozenset[str]:
+    return frozenset(available_timezones())
+
+
+def is_valid_timezone(name: str) -> bool:
+    return name in valid_timezones()

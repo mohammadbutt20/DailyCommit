@@ -8,8 +8,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dailycommit.api.deps import DB, CurrentUser, RedisDep, require_leader, require_member
+from dailycommit.config import settings
 from dailycommit.domain import timeutil
 from dailycommit.domain.streaks import Member, eligible_members
+from dailycommit.leetcode import client as lc
+from dailycommit.leetcode.importer import ensure_leetcode_problem
 from dailycommit.models import (
     Group,
     GroupDailyProblem,
@@ -33,9 +36,10 @@ from dailycommit.schemas import (
     MemberUpdateIn,
     ProblemSummary,
     StreakDayOut,
+    TimezonesOut,
 )
 from dailycommit.services import leaderboard
-from dailycommit.services.clock import group_tz, today
+from dailycommit.services.clock import group_tz, is_valid_timezone, today, valid_timezones
 from dailycommit.services.daily import daily_problem, ensure_daily_problem
 from dailycommit.services.events import group_topic, publish
 
@@ -63,7 +67,7 @@ async def group_summaries(db: AsyncSession, user_id: int) -> list[GroupSummary]:
     ).all()
     summaries = []
     for group, role in rows:
-        day = today(group.id)
+        day = today(group)
         count = await db.scalar(
             select(func.count()).select_from(GroupMember).where(GroupMember.group_id == group.id)
         )
@@ -89,6 +93,12 @@ async def group_summaries(db: AsyncSession, user_id: int) -> list[GroupSummary]:
     return summaries
 
 
+@router.get("/timezones", response_model=TimezonesOut)
+async def list_timezones(user: CurrentUser) -> TimezonesOut:
+    """IANA zones a group can use, plus the server default for new groups."""
+    return TimezonesOut(default=settings.day_timezone, zones=sorted(valid_timezones()))
+
+
 @router.get("", response_model=list[GroupSummary])
 async def my_groups(user: CurrentUser, db: DB) -> list[GroupSummary]:
     return await group_summaries(db, user.id)
@@ -96,7 +106,9 @@ async def my_groups(user: CurrentUser, db: DB) -> list[GroupSummary]:
 
 @router.post("", response_model=GroupRef, status_code=201)
 async def create_group(body: GroupCreateIn, user: CurrentUser, db: DB) -> GroupRef:
-    day = today()
+    tz_name = body.timezone or settings.day_timezone
+    if not is_valid_timezone(tz_name):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown timezone {tz_name!r}")
     for _ in range(5):
         code = _invite_code()
         if not await db.scalar(select(Group.id).where(Group.invite_code == code)):
@@ -104,10 +116,12 @@ async def create_group(body: GroupCreateIn, user: CurrentUser, db: DB) -> GroupR
     group = Group(
         name=body.name.strip(),
         invite_code=code,
+        timezone=tz_name,
         created_by=user.id,
-        # Nothing before today to evaluate.
-        last_rolled_day=day - timedelta(days=1),
     )
+    day = today(group)
+    # Nothing before today to evaluate.
+    group.last_rolled_day = day - timedelta(days=1)
     db.add(group)
     await db.flush()
     db.add(GroupMember(group_id=group.id, user_id=user.id, role="leader"))
@@ -146,8 +160,8 @@ async def group_detail(group_id: int, user: CurrentUser, db: DB) -> GroupDetail:
     me = await require_member(db, group_id, user.id)
     group = await db.get(Group, group_id)
     assert group is not None
-    tz = group_tz(group_id)
-    day = today(group_id)
+    tz = group_tz(group)
+    day = today(group)
     start = timeutil.day_start(day, tz)
 
     members = (
@@ -191,6 +205,7 @@ async def group_detail(group_id: int, user: CurrentUser, db: DB) -> GroupDetail:
         id=group.id,
         name=group.name,
         invite_code=group.invite_code,
+        timezone=group.timezone,
         my_role=me.role,
         current_streak=group.current_streak,
         best_streak=group.best_streak,
@@ -230,13 +245,24 @@ async def set_daily_problem(
     group_id: int, day: date, body: DailyOverrideIn, user: CurrentUser, db: DB
 ) -> None:
     await require_leader(db, group_id, user.id)
-    if day <= today(group_id):
+    group = await db.get(Group, group_id)
+    assert group is not None
+    if day <= today(group):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only future days can be changed")
     problem = await db.scalar(
         select(Problem).where(Problem.slug == body.problem_slug, Problem.retired.is_(False))
     )
+    if problem is None and (slug := lc.parse_slug(body.problem_slug)):
+        try:
+            async with lc.new_client() as http:
+                problem = await ensure_leetcode_problem(db, http, slug)
+        except lc.LeetCodeError as e:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     if problem is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Problem not found")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Problem not found (paid-only LeetCode problems can't be used)",
+        )
     await db.execute(
         insert(GroupDailyProblem)
         .values(group_id=group_id, day=day, problem_id=problem.id, assigned_by=user.id)
@@ -267,6 +293,8 @@ async def get_leaderboard(
     period: Literal["day", "week"] = "day",
 ) -> LeaderboardOut:
     await require_member(db, group_id, user.id)
-    day = today(group_id)
-    entries = await leaderboard.get_leaderboard(db, redis, group_id, period, day)
+    group = await db.get(Group, group_id)
+    assert group is not None
+    day = today(group)
+    entries = await leaderboard.get_leaderboard(db, redis, group_id, group_tz(group), period, day)
     return LeaderboardOut(period=period, day=day, entries=[LeaderboardEntry(**e) for e in entries])

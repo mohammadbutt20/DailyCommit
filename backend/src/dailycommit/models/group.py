@@ -12,6 +12,8 @@ class Group(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
     invite_code: Mapped[str] = mapped_column(String(16), unique=True)
+    # IANA zone that defines this group's day. Fixed at creation (ARCHITECTURE.md §8).
+    timezone: Mapped[str] = mapped_column(String(64))
     current_streak: Mapped[int] = mapped_column(default=0)
     best_streak: Mapped[int] = mapped_column(default=0)
     # Last local day whose streak outcome has been evaluated.
@@ -47,7 +49,8 @@ class GroupDailyProblem(Base):
 
 
 class GroupDaySolve(Base):
-    """A member solved the group's problem for `day`. Written once, by the worker."""
+    """A member solved the group's problem for `day`. Written once: by the worker (our judge)
+    or the scheduler's LeetCode check."""
 
     __tablename__ = "group_day_solves"
 
@@ -58,7 +61,12 @@ class GroupDaySolve(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id", ondelete="CASCADE"))
+    # Exactly how it was solved: our judge (submission_id) or LeetCode (external_ref, the
+    # LeetCode submission id). A check constraint requires at least one.
+    submission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("submissions.id", ondelete="CASCADE")
+    )
+    external_ref: Mapped[str | None] = mapped_column(String(64))
     solved_at: Mapped[datetime]
 
 

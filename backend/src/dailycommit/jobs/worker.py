@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import date
 from typing import Any
 
 from arq.connections import RedisSettings
@@ -13,10 +14,8 @@ from dailycommit.problems.schema import Signature
 from dailycommit.sandbox.backend import DockerSandbox
 from dailycommit.sandbox.languages import LANGUAGES
 from dailycommit.sandbox.runner import RunReport, TestInput, run_tests
-from dailycommit.services import leaderboard
-from dailycommit.services.clock import today
-from dailycommit.services.events import group_topic, publish, submission_topic
-from dailycommit.services.solves import record_solves
+from dailycommit.services.events import publish, submission_topic
+from dailycommit.services.solves import announce_solves, record_solves
 from dailycommit.services.testcases import tests_for_run
 
 log = logging.getLogger(__name__)
@@ -98,24 +97,21 @@ async def run_submission(ctx: dict[str, Any], submission_id: int) -> str:
             )
             for r in report.results
         )
-        credited: list[int] = []
+        credited: list[tuple[int, date]] = []
         if kind == "submit" and report.verdict == "AC":
-            credited = await record_solves(db, user_id, problem.id, submission_id, finished)
+            credited = await record_solves(
+                db, user_id, problem.id, finished, submission_id=submission_id
+            )
         user = await db.get(User, user_id)
 
-    for group_id in credited:
-        await leaderboard.invalidate(redis, group_id, today(group_id, finished))
-        await publish(
-            redis,
-            group_topic(group_id),
-            "solve",
-            {
-                "user_id": user_id,
-                "display_name": user.display_name if user else "?",
-                "problem": problem.slug,
-                "at": finished.isoformat(),
-            },
-        )
+    await announce_solves(
+        redis,
+        credited,
+        user_id=user_id,
+        display_name=user.display_name if user else "?",
+        problem_slug=problem.slug,
+        solved_at=finished,
+    )
     await publish(
         redis,
         topic,

@@ -1,14 +1,26 @@
 "use client";
 
-import Editor from "@monaco-editor/react";
+import Editor, { type BeforeMount, type OnMount } from "@monaco-editor/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Button, Card, ErrorText, Loading } from "@/components/ui";
+import { LeetCodeProblem } from "@/components/LeetCodeProblem";
+import {
+  Badge,
+  Button,
+  Difficulty,
+  ErrorText,
+  Eyebrow,
+  Loading,
+  Select,
+  Spinner,
+  cx,
+} from "@/components/ui";
 import { api, type Schemas, unwrap } from "@/lib/api/client";
-import { VERDICT_LABEL, verdictColor } from "@/lib/format";
+import { mono } from "@/lib/fonts";
+import { VERDICT_LABEL, verdictColor, verdictSurface } from "@/lib/format";
 import { useGroup, useRequireMe } from "@/lib/queries";
 import { useTopic } from "@/lib/ws";
 
@@ -16,7 +28,7 @@ type Problem = Schemas["ProblemDetail"];
 
 export default function TodayPage() {
   const groupId = Number(useParams<{ groupId: string }>().groupId);
-  useRequireMe();
+  const me = useRequireMe();
   const group = useGroup(groupId);
   const slug = group.data?.today_problem?.slug;
   const problem = useQuery({
@@ -26,50 +38,111 @@ export default function TodayPage() {
   });
 
   if (group.isError) return <ErrorText error={group.error} />;
-  if (group.data && !slug) return <p className="text-slate-400">No problem assigned today.</p>;
+  if (group.data && !slug) return <p className="text-muted">No problem assigned today.</p>;
   if (!problem.data) return <Loading />;
 
   return (
-    <div className="space-y-4">
-      <Link href={`/g/${groupId}`} className="text-sm text-slate-400 hover:text-slate-100">
-        ← {group.data?.name}
-      </Link>
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Statement problem={problem.data} />
-        <Workspace problem={problem.data} groupId={groupId} />
+    // On large screens the page is a fixed-height IDE: header 56px + main padding 64px.
+    <div className="flex flex-col gap-3 lg:h-[calc(100vh-120px)]">
+      <div className="flex items-center justify-between gap-4">
+        <Link href={`/g/${groupId}`} className="text-xs text-faint transition-colors hover:text-fg">
+          ← {group.data?.name}
+        </Link>
+        <Eyebrow>Today · {group.data?.today}</Eyebrow>
       </div>
+      {problem.data.source === "leetcode" && group.data ? (
+        <LeetCodeProblem problem={problem.data} group={group.data} userId={me.data?.user.id} />
+      ) : (
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          <Statement problem={problem.data} />
+          <Workspace problem={problem.data} groupId={groupId} />
+        </div>
+      )}
     </div>
   );
 }
 
 function Statement({ problem: p }: { problem: Problem }) {
   return (
-    <Card className="space-y-4 self-start">
-      <div>
-        <h1 className="text-2xl font-semibold">{p.title}</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          {p.difficulty} · {p.topics.join(", ")} · {p.time_limit_ms} ms · {p.memory_limit_mb} MB
-        </p>
-      </div>
-      <div className="markdown text-slate-300">
-        <ReactMarkdown>{p.statement_md}</ReactMarkdown>
-      </div>
-      {p.samples.map((s, i) => (
-        <div key={i} className="rounded-lg bg-slate-950 p-3 font-mono text-xs">
-          <p className="mb-1 text-slate-500">Example {i + 1}</p>
-          <p>
-            <span className="text-slate-500">input </span>
-            {JSON.stringify(s.input)}
-          </p>
-          <p>
-            <span className="text-slate-500">output </span>
-            {JSON.stringify(s.expected)}
-          </p>
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="border-b border-line px-6 py-5">
+        <h1 className="text-2xl font-semibold tracking-tight">{p.title}</h1>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Difficulty level={p.difficulty} />
+          {p.topics.map((t) => (
+            <Badge key={t}>{t}</Badge>
+          ))}
+          <span className="ml-auto font-mono text-[11px] text-faint">
+            {p.time_limit_ms} ms · {p.memory_limit_mb} MB
+          </span>
         </div>
-      ))}
-    </Card>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="markdown text-[15px]">
+          <ReactMarkdown>{p.statement_md}</ReactMarkdown>
+        </div>
+        <div className="mt-6 space-y-3">
+          {p.samples.map((s, i) => (
+            <div key={i} className="overflow-hidden rounded-lg border border-line bg-sunken">
+              <p className="border-b border-line px-3 py-1.5 text-xs font-medium text-muted">
+                Example {i + 1}
+              </p>
+              <div className="space-y-1.5 px-3 py-2.5 font-mono text-[13px]">
+                <IO label="input" value={s.input} />
+                <IO label="output" value={s.expected} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
+
+function IO({ label, value, tone }: { label: string; value: unknown; tone?: string }) {
+  return (
+    <p className="flex gap-3">
+      <span className="w-14 shrink-0 text-faint">{label}</span>
+      <span className={cx("break-all", tone ?? "text-fg")}>{JSON.stringify(value)}</span>
+    </p>
+  );
+}
+
+const defineTheme: BeforeMount = (monaco) => {
+  monaco.editor.defineTheme("daily-commit", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "5d6675", fontStyle: "italic" },
+      { token: "keyword", foreground: "c792ea" },
+      { token: "string", foreground: "a5e3b5" },
+      { token: "number", foreground: "f2b84b" },
+      { token: "type", foreground: "7dcfff" },
+    ],
+    colors: {
+      "editor.background": "#0c0f12",
+      "editor.foreground": "#e7eaef",
+      "editorLineNumber.foreground": "#3a424f",
+      "editorLineNumber.activeForeground": "#8f98a6",
+      "editor.lineHighlightBackground": "#12161b",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#3fd68f33",
+      "editor.inactiveSelectionBackground": "#3fd68f1a",
+      "editorCursor.foreground": "#3fd68f",
+      "editorIndentGuide.background1": "#1a1f26",
+      "editorIndentGuide.activeBackground1": "#2c333d",
+      "editorWidget.background": "#101317",
+      "editorWidget.border": "#2c333d",
+      "scrollbarSlider.background": "#ffffff12",
+      "scrollbarSlider.hoverBackground": "#ffffff20",
+    },
+  });
+};
+
+// Monaco measures glyphs once; re-measure after the web font arrives so the cursor lines up.
+const remeasure: OnMount = (_editor, monaco) => {
+  document.fonts?.ready.then(() => monaco.editor.remeasureFonts());
+};
 
 type LiveTest = { i: number; verdict: string; ms: number | null };
 
@@ -94,6 +167,14 @@ function Workspace({ problem: p, groupId }: { problem: Problem; groupId: number 
     setCode(value ?? "");
     try {
       localStorage.setItem(storageKey, value ?? "");
+    } catch {}
+  }
+
+  function resetCode() {
+    const starter = p.starter_code[language] ?? "";
+    setCode(starter);
+    try {
+      localStorage.removeItem(storageKey);
     } catch {}
   }
 
@@ -137,42 +218,79 @@ function Workspace({ problem: p, groupId }: { problem: Problem; groupId: number 
 
   const s = submission.data;
   const busy = submit.isPending || (s !== undefined && s.status !== "done");
+  const pendingKind = submit.isPending ? submit.variables : s && s.status !== "done" ? s.kind : null;
 
   return (
-    <div className="space-y-4">
-      <Card className="p-0">
-        <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            className="rounded bg-slate-950 px-2 py-1 text-sm"
-          >
-            {p.languages.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <Button variant="secondary" disabled={busy} onClick={() => submit.mutate("run")}>
-              Run samples
+    <div className="flex min-h-0 flex-col gap-3">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-sunken">
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="h-8 w-auto text-xs"
+            >
+              {p.languages.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+            <Button variant="ghost" size="sm" onClick={resetCode} title="Restore the starter code">
+              Reset
             </Button>
-            <Button disabled={busy} onClick={() => submit.mutate("submit")}>
-              Submit
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() => submit.mutate("run")}
+            >
+              {pendingKind === "run" ? <Spinner /> : "▶"} Run samples
+            </Button>
+            <Button size="sm" disabled={busy} onClick={() => submit.mutate("submit")}>
+              {pendingKind === "submit" && <Spinner />} Submit
             </Button>
           </div>
         </div>
-        <Editor
-          height="420px"
-          theme="vs-dark"
-          language={p.languages.find((l) => l.id === language)?.monaco ?? language}
-          value={code}
-          onChange={onChange}
-          options={{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false }}
-        />
-      </Card>
+        <div className="h-[440px] lg:h-auto lg:min-h-0 lg:flex-1">
+          <Editor
+            height="100%"
+            theme="daily-commit"
+            beforeMount={defineTheme}
+            onMount={remeasure}
+            loading={<Loading />}
+            language={p.languages.find((l) => l.id === language)?.monaco ?? language}
+            value={code}
+            onChange={onChange}
+            options={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              lineHeight: 22,
+              fontFamily: mono.style.fontFamily,
+              fontLigatures: true,
+              scrollBeyondLastLine: false,
+              padding: { top: 14, bottom: 14 },
+              renderLineHighlight: "all",
+              smoothScrolling: true,
+              cursorBlinking: "smooth",
+              automaticLayout: true,
+            }}
+          />
+        </div>
+      </section>
       <ErrorText error={submit.error} />
-      {s && <Results submission={s} live={live} />}
+      <div className="lg:max-h-[42%] lg:shrink-0 lg:overflow-y-auto">
+        {s ? (
+          <Results submission={s} live={live} />
+        ) : (
+          <div className="rounded-xl border border-dashed border-line px-4 py-3 text-xs text-faint">
+            <span className="text-muted">Run samples</span> checks the examples.{" "}
+            <span className="text-muted">Submit</span> runs every test and counts toward the streak.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -182,53 +300,89 @@ function Results({ submission: s, live }: { submission: Schemas["SubmissionOut"]
   const tests: LiveTest[] = done
     ? s.results.map((r) => ({ i: r.ordinal, verdict: r.verdict, ms: r.time_ms }))
     : live;
+  const passed = done ? s.passed : tests.filter((t) => t.verdict === "AC").length;
+  const failedSample = done
+    ? s.results.find((r) => r.sample && r.verdict !== "AC" && r.verdict !== "skipped")
+    : undefined;
+
   return (
-    <Card className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className={`text-lg font-semibold ${done ? verdictColor(s.verdict) : "text-slate-300"}`}>
-          {done
-            ? VERDICT_LABEL[s.verdict ?? ""] ?? s.verdict
-            : s.status === "queued"
-              ? "Queued…"
-              : "Running…"}
-        </h2>
-        <span className="text-sm text-slate-400">
-          {s.kind === "run" ? "samples" : "all tests"} · {done ? s.passed : tests.filter((t) => t.verdict === "AC").length}/
-          {s.total || "?"} passed
+    <section
+      className={cx(
+        "rounded-xl border p-4",
+        done ? verdictSurface(s.verdict) : "border-line bg-surface",
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {!done && <Spinner className="text-muted" />}
+          <h2
+            className={cx(
+              "text-lg font-semibold tracking-tight",
+              done ? verdictColor(s.verdict) : "text-fg",
+            )}
+          >
+            {done
+              ? (VERDICT_LABEL[s.verdict ?? ""] ?? s.verdict)
+              : s.status === "queued"
+                ? "Queued…"
+                : "Running…"}
+          </h2>
+          <Badge>{s.kind === "run" ? "samples" : "all tests"}</Badge>
+        </div>
+        <span className="font-mono text-xs text-muted">
+          <span className="text-fg">{passed}</span>/{s.total || "?"} passed
           {done && s.runtime_ms != null && ` · ${s.runtime_ms} ms`}
         </span>
       </div>
+
       {done && s.verdict === "AC" && s.kind === "submit" && (
-        <p className="text-sm text-emerald-400">Solved. Your group&apos;s streak thanks you.</p>
+        <p className="mt-2 text-sm text-accent">Solved. Your group&apos;s streak thanks you.</p>
       )}
-      <div className="flex flex-wrap gap-2">
-        {tests.map((t) => (
-          <span
-            key={t.i}
-            title={VERDICT_LABEL[t.verdict] ?? t.verdict}
-            className={`rounded border border-slate-800 px-2 py-1 font-mono text-xs ${verdictColor(t.verdict)}`}
-          >
-            #{t.i + 1} {t.verdict}
-            {t.ms != null && <span className="text-slate-500"> {t.ms}ms</span>}
-          </span>
-        ))}
-      </div>
-      {s.error && (
-        <pre className="overflow-x-auto rounded bg-slate-950 p-3 text-xs text-rose-300">{s.error}</pre>
-      )}
-      {done &&
-        s.results
-          .filter((r) => r.sample && r.verdict !== "AC" && r.verdict !== "skipped")
-          .slice(0, 1)
-          .map((r) => (
-            <div key={r.ordinal} className="space-y-1 rounded bg-slate-950 p-3 font-mono text-xs">
-              <p className="text-slate-500">Failed example #{r.ordinal + 1}</p>
-              <p>input {JSON.stringify(r.input)}</p>
-              <p>expected {JSON.stringify(r.expected)}</p>
-              <p>got {JSON.stringify(r.actual)}</p>
-              {r.stdout && <pre className="whitespace-pre-wrap text-slate-400">stdout: {r.stdout}</pre>}
-            </div>
+
+      {tests.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {tests.map((t) => (
+            <span
+              key={t.i}
+              title={VERDICT_LABEL[t.verdict] ?? t.verdict}
+              className={cx(
+                "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px]",
+                verdictSurface(t.verdict),
+                verdictColor(t.verdict),
+              )}
+            >
+              <span className="text-faint">#{t.i + 1}</span>
+              {t.verdict}
+              {t.ms != null && <span className="text-faint">{t.ms}ms</span>}
+            </span>
           ))}
-    </Card>
+        </div>
+      )}
+
+      {s.error && (
+        <pre className="mt-3 overflow-x-auto rounded-lg border border-line bg-sunken p-3 font-mono text-xs text-danger">
+          {s.error}
+        </pre>
+      )}
+
+      {failedSample && (
+        <div className="mt-3 overflow-hidden rounded-lg border border-line bg-sunken">
+          <p className="border-b border-line px-3 py-1.5 text-xs font-medium text-muted">
+            Failed example #{failedSample.ordinal + 1}
+          </p>
+          <div className="space-y-1.5 px-3 py-2.5 font-mono text-[13px]">
+            <IO label="input" value={failedSample.input} />
+            <IO label="expected" value={failedSample.expected} tone="text-accent" />
+            <IO label="got" value={failedSample.actual} tone="text-danger" />
+            {failedSample.stdout && (
+              <pre className="mt-2 border-t border-line pt-2 whitespace-pre-wrap text-muted">
+                <span className="text-faint">stdout </span>
+                {failedSample.stdout}
+              </pre>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

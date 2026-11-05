@@ -25,7 +25,12 @@ async def ensure_daily_problem(db: AsyncSession, group_id: int, day: date) -> No
     )
     if exists is not None:
         return
-    problems = (await db.scalars(select(Problem).where(Problem.retired.is_(False)))).all()
+    # Imported LeetCode problems are the daily pool once there are any; the local problems/
+    # set is the fallback (and stays available for leaders to pick by hand).
+    active = select(Problem).where(Problem.retired.is_(False))
+    problems = (await db.scalars(active.where(Problem.source == "leetcode"))).all()
+    if not problems:
+        problems = (await db.scalars(active)).all()
     history = (
         await db.execute(
             select(GroupDailyProblem.day, GroupDailyProblem.problem_id).where(

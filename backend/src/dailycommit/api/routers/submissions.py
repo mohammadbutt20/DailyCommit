@@ -25,6 +25,10 @@ async def create_submission(
     )
     if problem is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Problem not found")
+    if problem.source != "local":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "This problem is solved on LeetCode, not here"
+        )
 
     rate_key = f"rl:submit:{user.id}"
     count = await redis.incr(rate_key)

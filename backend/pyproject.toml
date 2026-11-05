@@ -16,6 +16,8 @@ dependencies = [
     "docker>=7.1",
     "pyyaml>=6.0",
     "tzdata>=2024.2",  # slim images and Windows have no system tz database
+    "httpx>=0.27",
+    "nh3>=0.2.17",
 ]
 
 [dependency-groups]

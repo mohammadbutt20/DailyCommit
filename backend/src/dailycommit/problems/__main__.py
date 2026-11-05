@@ -49,7 +49,9 @@ def verify(problems: list[LoadedProblem]) -> list[str]:
 
 async def sync(problems: list[LoadedProblem]) -> None:
     async with SessionLocal() as db, db.begin():
-        existing = {p.slug: p for p in (await db.scalars(select(Problem))).all()}
+        # Only local problems mirror problems/; imported LeetCode ones are managed separately.
+        local = select(Problem).where(Problem.source == "local")
+        existing = {p.slug: p for p in (await db.scalars(local)).all()}
         for lp in problems:
             spec = lp.spec
             row = existing.pop(spec.slug, None)

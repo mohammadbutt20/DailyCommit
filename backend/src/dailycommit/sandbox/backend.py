@@ -107,8 +107,9 @@ class DockerSandbox:
                 ],
                 runtime=self.runtime,
                 labels={SANDBOX_LABEL: "1"},
+                # docker-py sets StdinOnce itself when stdin_open=True on a non-detached create,
+                # so stdin closes after the tar is sent; it rejects an explicit stdin_once kwarg.
                 stdin_open=True,
-                stdin_once=True,
                 environment={},
             )
         except self._docker.errors.ImageNotFound as e:

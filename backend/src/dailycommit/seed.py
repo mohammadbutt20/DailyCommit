@@ -8,10 +8,12 @@ solved, so logging in as anyone else and solving shows the live flow.
 
 import asyncio
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from dailycommit.api.auth.sessions import user_for_identity
+from dailycommit.config import settings
 from dailycommit.db import SessionLocal
 from dailycommit.domain import timeutil
 from dailycommit.models import (
@@ -22,7 +24,6 @@ from dailycommit.models import (
     Submission,
     utcnow,
 )
-from dailycommit.services.clock import group_tz, today
 from dailycommit.services.daily import daily_problem, ensure_daily_problem
 from dailycommit.services.rollover import rollover_all
 
@@ -39,14 +40,16 @@ async def seed() -> None:
             raise SystemExit("no problems in the database; run `make sync-problems` first")
 
         now = utcnow()
-        tz = group_tz()
-        day0 = today(now=now)
+        tz_name = settings.day_timezone
+        tz = ZoneInfo(tz_name)
+        day0 = timeutil.local_day(now, tz)
         users = [await user_for_identity(db, "dev", n.lower(), n) for n in NAMES]
         alice, bob = users[0], users[1]
 
         group = Group(
             name="Pledge Class Demo",
             invite_code=INVITE,
+            timezone=tz_name,
             created_by=alice.id,
             created_at=now - timedelta(days=10),
             last_rolled_day=day0 - timedelta(days=8),

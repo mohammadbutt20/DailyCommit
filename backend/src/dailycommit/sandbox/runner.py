@@ -16,6 +16,13 @@ from dailycommit.sandbox.compare import outputs_match
 from dailycommit.sandbox.languages import Language
 
 HIDDEN_ERROR = "Runtime error on a hidden test"
+# Exit codes of natively compiled programs killed by a signal (128 + signal number).
+_SIGNAL_EXITS = {
+    134: "Aborted (SIGABRT)",
+    136: "Arithmetic error, e.g. division by zero (SIGFPE)",
+    139: "Segmentation fault (SIGSEGV): invalid memory access or stack overflow",
+    153: "Output limit exceeded (SIGXFSZ)",
+}
 
 
 @dataclass(frozen=True)
@@ -75,6 +82,11 @@ def run_tests(
             msg = json.loads(line[len(mark) :])
         except ValueError:
             return False
+        if msg.get("ready") is True:
+            return True  # compiled and started: the per-test idle budget applies from here
+        if msg.get("ce_stderr") is True:
+            meta.setdefault("ce_stderr", "1")  # message is the compiler output, on stderr
+            return True
         if "ce" in msg or "fatal" in msg:
             meta.setdefault("ce" if "ce" in msg else "fatal", str(msg.get("ce") or msg["fatal"]))
             return True
@@ -94,7 +106,7 @@ def run_tests(
     req = RunRequest(
         image=language.image,
         files=files,
-        argv=language.run_command(mark),
+        argv=language.run_command(mark, limits["memory_mb"]),
         memory_mb=limits["memory_mb"] + language.memory_overhead_mb,
         startup_s=language.startup_s,
         idle_s=idle_s,
@@ -102,6 +114,8 @@ def run_tests(
     )
     run = sandbox.run(req, on_line)
 
+    if "ce_stderr" in meta and not outcomes:
+        meta.setdefault("ce", run.stderr.strip() or "Compilation failed")
     if "ce" in meta:
         return RunReport("CE", 0, len(tests), None, meta["ce"])
 
@@ -109,14 +123,22 @@ def run_tests(
     reveal_all = all(t.sample for t in tests)
     first_missing = next((i for i in range(len(tests)) if i not in outcomes), None)
     if first_missing is not None:
-        if run.oom_killed or (run.exit_code == 137 and not run.timed_out):
+        # Our own kills (timeout, output cap) also exit 137, so check them before guessing OOM.
+        if run.oom_killed:
             verdict, error = "MLE", None
         elif run.timed_out:
             verdict, error = "TLE", None
         elif run.output_exceeded:
             verdict, error = "RE", "Output limit exceeded"
+        elif run.exit_code == 137:
+            verdict, error = "MLE", None
         else:
-            detail = meta.get("fatal") or run.stderr.strip() or f"exit code {run.exit_code}"
+            detail = (
+                meta.get("fatal")
+                or run.stderr.strip()
+                or _SIGNAL_EXITS.get(run.exit_code or 0)
+                or f"exit code {run.exit_code}"
+            )
             verdict, error = "RE", detail if reveal_all else HIDDEN_ERROR
         outcomes[first_missing] = TestOutcome(first_missing, verdict, error=error)
         emit({"event": "test", "data": _public(outcomes[first_missing])})

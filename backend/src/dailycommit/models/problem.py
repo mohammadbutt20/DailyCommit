@@ -8,7 +8,9 @@ from dailycommit.models.base import Base
 
 
 class Problem(Base):
-    """Synced from problems/<slug>/ by `python -m dailycommit.problems sync`. Never edit in the DB."""
+    """Either `local` (synced from problems/<slug>/ by `python -m dailycommit.problems sync`,
+    judged in our sandbox) or `leetcode` (imported by `python -m dailycommit.leetcode`, solved
+    on leetcode.com and verified there). Never edit in the DB."""
 
     __tablename__ = "problems"
 
@@ -17,11 +19,16 @@ class Problem(Base):
     title: Mapped[str] = mapped_column(String(120))
     difficulty: Mapped[str] = mapped_column(String(16))
     topics: Mapped[list[str]] = mapped_column(ARRAY(String(40)))
-    statement_md: Mapped[str] = mapped_column(Text)
+    statement_md: Mapped[str] = mapped_column(Text)  # local problems; "" for LeetCode
+    source: Mapped[str] = mapped_column(String(16), default="local")  # local | leetcode
+    source_url: Mapped[str | None] = mapped_column(String(300))  # the problem on leetcode.com
+    frontend_id: Mapped[str | None] = mapped_column(String(16))  # LeetCode's problem number
+    statement_html: Mapped[str | None] = mapped_column(Text)  # LeetCode's, sanitized on import
+    # Local problems only (NULL for LeetCode):
     # {"function": str, "params": [{"name", "type"}], "returns": str}
-    signature: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    compare: Mapped[Any] = mapped_column(JSONB)
-    limits: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    signature: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    compare: Mapped[Any] = mapped_column(JSONB, nullable=True)
+    limits: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     content_hash: Mapped[str] = mapped_column(String(64))
     retired: Mapped[bool] = mapped_column(default=False)
 

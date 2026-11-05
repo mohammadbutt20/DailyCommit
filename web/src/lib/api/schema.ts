@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Providers
+         * @description Which sign-in options this deployment offers (the login page shows only these).
+         */
+        get: operations["providers_api_auth_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -47,6 +67,26 @@ export interface paths {
         };
         /** Me */
         get: operations["me_api_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/timezones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Timezones
+         * @description IANA zones a group can use, plus the server default for new groups.
+         */
+        get: operations["list_timezones_api_groups_timezones_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -175,6 +215,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/leetcode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Account */
+        get: operations["get_account_api_me_leetcode_get"];
+        /**
+         * Start Link
+         * @description Step 1: name the account. Returns the code to put in that profile's Summary.
+         */
+        put: operations["start_link_api_me_leetcode_put"];
+        post?: never;
+        /** Unlink */
+        delete: operations["unlink_api_me_leetcode_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/leetcode/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Link
+         * @description Step 2: the code is in the profile's Summary, so the account is theirs.
+         */
+        post: operations["verify_link_api_me_leetcode_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/leetcode/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Now
+         * @description Look for today's accepted LeetCode solves right away instead of waiting for the
+         *     scheduler (which checks every few minutes anyway).
+         */
+        post: operations["check_now_api_me_leetcode_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/problems": {
         parameters: {
             query?: never;
@@ -281,6 +384,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AuthProvidersOut */
+        AuthProvidersOut: {
+            /** Discord */
+            discord: boolean;
+            /** Dev */
+            dev: boolean;
+        };
         /** DailyOverrideIn */
         DailyOverrideIn: {
             /** Problem Slug */
@@ -295,6 +405,8 @@ export interface components {
         GroupCreateIn: {
             /** Name */
             name: string;
+            /** Timezone */
+            timezone?: string | null;
         };
         /** GroupDetail */
         GroupDetail: {
@@ -304,6 +416,8 @@ export interface components {
             name: string;
             /** Invite Code */
             invite_code: string;
+            /** Timezone */
+            timezone: string;
             /** My Role */
             my_role: string;
             /** Current Streak */
@@ -402,6 +516,25 @@ export interface components {
             /** Entries */
             entries: components["schemas"]["LeaderboardEntry"][];
         };
+        /** LeetCodeAccountOut */
+        LeetCodeAccountOut: {
+            /** Username */
+            username: string | null;
+            /** Pending Username */
+            pending_username: string | null;
+            /** Verify Code */
+            verify_code: string | null;
+        };
+        /** LeetCodeCheckOut */
+        LeetCodeCheckOut: {
+            /** Credited */
+            credited: number;
+        };
+        /** LeetCodeLinkIn */
+        LeetCodeLinkIn: {
+            /** Username */
+            username: string;
+        };
         /** MeOut */
         MeOut: {
             user: components["schemas"]["UserOut"];
@@ -449,18 +582,30 @@ export interface components {
             difficulty: string;
             /** Topics */
             topics: string[];
+            /**
+             * Source
+             * @default local
+             * @enum {string}
+             */
+            source: "local" | "leetcode";
+            /** Source Url */
+            source_url?: string | null;
+            /** Frontend Id */
+            frontend_id?: string | null;
             /** Statement Md */
             statement_md: string;
+            /** Statement Html */
+            statement_html: string | null;
             /** Function */
-            function: string;
+            function: string | null;
             /** Params */
             params: components["schemas"]["ParamOut"][];
             /** Returns */
-            returns: string;
+            returns: string | null;
             /** Time Limit Ms */
-            time_limit_ms: number;
+            time_limit_ms: number | null;
             /** Memory Limit Mb */
-            memory_limit_mb: number;
+            memory_limit_mb: number | null;
             /** Samples */
             samples: components["schemas"]["SampleOut"][];
             /** Languages */
@@ -480,6 +625,16 @@ export interface components {
             difficulty: string;
             /** Topics */
             topics: string[];
+            /**
+             * Source
+             * @default local
+             * @enum {string}
+             */
+            source: "local" | "leetcode";
+            /** Source Url */
+            source_url?: string | null;
+            /** Frontend Id */
+            frontend_id?: string | null;
         };
         /** SampleOut */
         SampleOut: {
@@ -573,6 +728,13 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** TimezonesOut */
+        TimezonesOut: {
+            /** Default */
+            default: string;
+            /** Zones */
+            zones: string[];
+        };
         /** UserOut */
         UserOut: {
             /** Id */
@@ -626,6 +788,26 @@ export interface operations {
             };
         };
     };
+    providers_api_auth_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProvidersOut"];
+                };
+            };
+        };
+    };
     logout_api_auth_logout_post: {
         parameters: {
             query?: never;
@@ -660,6 +842,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeOut"];
+                };
+            };
+        };
+    };
+    list_timezones_api_groups_timezones_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimezonesOut"];
                 };
             };
         };
@@ -909,6 +1111,117 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_account_api_me_leetcode_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeetCodeAccountOut"];
+                };
+            };
+        };
+    };
+    start_link_api_me_leetcode_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeetCodeLinkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeetCodeAccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlink_api_me_leetcode_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    verify_link_api_me_leetcode_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeetCodeAccountOut"];
+                };
+            };
+        };
+    };
+    check_now_api_me_leetcode_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeetCodeCheckOut"];
                 };
             };
         };

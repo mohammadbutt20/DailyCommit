@@ -1,6 +1,7 @@
 import json
 from datetime import date, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -8,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dailycommit.domain import leaderboard, timeutil
 from dailycommit.models import GroupDaySolve, User
-from dailycommit.services.clock import group_tz
 
 Period = Literal["day", "week"]
 CACHE_TTL_S = 300
@@ -23,7 +23,12 @@ def _key(group_id: int, period: Period, day: date) -> str:
 
 
 async def get_leaderboard(
-    db: AsyncSession, redis: Redis, group_id: int, period: Period, day: date
+    db: AsyncSession,
+    redis: Redis,
+    group_id: int,
+    tz: ZoneInfo,
+    period: Period,
+    day: date,
 ) -> list[dict]:
     key = _key(group_id, period, day)
     cached = await redis.get(key)
@@ -32,7 +37,6 @@ async def get_leaderboard(
 
     first = _anchor(period, day)
     last = day if period == "day" else first + timedelta(days=6)
-    tz = group_tz(group_id)
     rows = (
         await db.execute(
             select(GroupDaySolve).where(
