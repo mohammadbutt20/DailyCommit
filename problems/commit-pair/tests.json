@@ -1,0 +1,112 @@
+[
+  {
+    "input": {
+      "counts": [
+        3,
+        9,
+        14,
+        5
+      ],
+      "target": 19
+    },
+    "expected": [
+      2,
+      3
+    ],
+    "sample": true
+  },
+  {
+    "input": {
+      "counts": [
+        10,
+        10
+      ],
+      "target": 20
+    },
+    "expected": [
+      0,
+      1
+    ],
+    "sample": true
+  },
+  {
+    "input": {
+      "counts": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "target": 11
+    },
+    "expected": [
+      4,
+      5
+    ],
+    "sample": false
+  },
+  {
+    "input": {
+      "counts": [
+        -4,
+        7,
+        12,
+        0
+      ],
+      "target": 8
+    },
+    "expected": [
+      0,
+      2
+    ],
+    "sample": false
+  },
+  {
+    "input": {
+      "counts": [
+        0,
+        0,
+        3
+      ],
+      "target": 0
+    },
+    "expected": [
+      0,
+      1
+    ],
+    "sample": false
+  },
+  {
+    "input": {
+      "counts": [
+        100,
+        -100,
+        50,
+        25
+      ],
+      "target": 75
+    },
+    "expected": [
+      2,
+      3
+    ],
+    "sample": false
+  },
+  {
+    "input": {
+      "counts": [
+        5,
+        1,
+        5
+      ],
+      "target": 10
+    },
+    "expected": [
+      0,
+      2
+    ],
+    "sample": false
+  }
+]

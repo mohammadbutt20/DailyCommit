@@ -1,0 +1,89 @@
+# Dev stack. Use the Makefile (`make up`) rather than calling compose directly.
+# Everything is served from http://localhost:8080 through Caddy (same origin for web, API, WS).
+name: dailycommit
+
+x-backend: &backend
+  build: ../backend
+  image: dailycommit-backend:dev
+  env_file:
+    - path: ../.env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+asyncpg://dailycommit:dailycommit@postgres:5432/dailycommit
+    REDIS_URL: redis://redis:6379/0
+    PROBLEMS_DIR: /problems
+  volumes:
+    - ../backend:/app
+    - ../problems:/problems:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dailycommit
+      POSTGRES_PASSWORD: dailycommit
+      POSTGRES_DB: dailycommit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dailycommit"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    <<: *backend
+    command: uvicorn dailycommit.api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+
+  worker:
+    <<: *backend
+    command: arq dailycommit.jobs.worker.WorkerSettings --watch /app/src
+    volumes:
+      - ../backend:/app
+      - ../problems:/problems:ro
+      # Starts sibling sandbox containers. Root-equivalent on the host: the worker must never
+      # execute submission code itself (ARCHITECTURE.md §5).
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  scheduler:
+    <<: *backend
+    command: arq dailycommit.jobs.scheduler.SchedulerSettings --watch /app/src
+
+  web:
+    build: ../web
+    image: dailycommit-web:dev
+    command: npm run dev
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - ../web:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - web
+
+volumes:
+  pgdata:

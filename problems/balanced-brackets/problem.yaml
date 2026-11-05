@@ -1,0 +1,9 @@
+slug: balanced-brackets
+title: Balanced Brackets
+difficulty: easy
+topics: [stack, strings]
+function: isBalanced
+params:
+  - { name: s, type: string }
+returns: bool
+limits: { time_ms: 2000, memory_mb: 128 }

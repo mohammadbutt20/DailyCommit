@@ -1,0 +1,65 @@
+[
+  {
+    "input": {
+      "s": "([]{})"
+    },
+    "expected": true,
+    "sample": true
+  },
+  {
+    "input": {
+      "s": "(]"
+    },
+    "expected": false,
+    "sample": true
+  },
+  {
+    "input": {
+      "s": ""
+    },
+    "expected": true,
+    "sample": false
+  },
+  {
+    "input": {
+      "s": "((("
+    },
+    "expected": false,
+    "sample": false
+  },
+  {
+    "input": {
+      "s": "}{"
+    },
+    "expected": false,
+    "sample": false
+  },
+  {
+    "input": {
+      "s": "{[()()]}"
+    },
+    "expected": true,
+    "sample": false
+  },
+  {
+    "input": {
+      "s": "([)]"
+    },
+    "expected": false,
+    "sample": false
+  },
+  {
+    "input": {
+      "s": "((()))[]{}"
+    },
+    "expected": true,
+    "sample": false
+  },
+  {
+    "input": {
+      "s": ")"
+    },
+    "expected": false,
+    "sample": false
+  }
+]

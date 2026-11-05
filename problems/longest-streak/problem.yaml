@@ -1,0 +1,9 @@
+slug: longest-streak
+title: Longest Streak
+difficulty: medium
+topics: [hashing, arrays]
+function: longestStreak
+params:
+  - { name: days, type: "int[]" }
+returns: int
+limits: { time_ms: 2000, memory_mb: 128 }
