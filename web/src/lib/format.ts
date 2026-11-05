@@ -30,7 +30,20 @@ export const VERDICT_LABEL: Record<string, string> = {
 };
 
 export function verdictColor(verdict: string | null | undefined): string {
-  if (verdict === "AC") return "text-emerald-400";
-  if (verdict === "skipped" || !verdict) return "text-slate-500";
-  return "text-rose-400";
+  if (verdict === "AC") return "text-accent";
+  if (verdict === "skipped" || !verdict) return "text-faint";
+  if (verdict === "TLE" || verdict === "MLE") return "text-warn";
+  return "text-danger";
+}
+
+/** Background + border classes for a verdict chip or banner. */
+export function verdictSurface(verdict: string | null | undefined): string {
+  if (verdict === "AC") return "border-[#3fd68f40] bg-accent-soft";
+  if (verdict === "skipped" || !verdict) return "border-line bg-raised";
+  if (verdict === "TLE" || verdict === "MLE") return "border-[#f2b84b40] bg-warn-soft";
+  return "border-[#f0646f40] bg-danger-soft";
+}
+
+export function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }

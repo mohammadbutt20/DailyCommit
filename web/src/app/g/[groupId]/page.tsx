@@ -4,25 +4,44 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Button, Card, ErrorText, Loading } from "@/components/ui";
+import StreakGraph from "@/components/StreakGraph";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Difficulty,
+  Empty,
+  ErrorText,
+  Eyebrow,
+  Loading,
+  Segmented,
+  Select,
+  cx,
+} from "@/components/ui";
 import { api, type Schemas, unwrap } from "@/lib/api/client";
-import { duration, nextDay, untilText } from "@/lib/format";
+import { clockTime, duration, nextDay, untilText } from "@/lib/format";
 import { useGroup, useRequireMe } from "@/lib/queries";
 import { useTopic } from "@/lib/ws";
 
 type Group = Schemas["GroupDetail"];
+type FeedItem = { at: number; who: string; text: string; kind: "solve" | "join" };
 
 export default function GroupPage() {
   const groupId = Number(useParams<{ groupId: string }>().groupId);
   const me = useRequireMe();
   const group = useGroup(groupId);
   const queryClient = useQueryClient();
-  const [feed, setFeed] = useState<string[]>([]);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
 
   useTopic(me.isSuccess ? `group:${groupId}` : null, (msg) => {
     const who = String(msg.data.display_name ?? "Someone");
-    if (msg.event === "solve") setFeed((f) => [`${who} solved today's problem`, ...f].slice(0, 20));
-    if (msg.event === "join") setFeed((f) => [`${who} joined the group`, ...f].slice(0, 20));
+    const at = Date.now();
+    if (msg.event === "solve")
+      setFeed((f) => [{ at, who, text: "solved today's problem", kind: "solve" as const }, ...f].slice(0, 20));
+    if (msg.event === "join")
+      setFeed((f) => [{ at, who, text: "joined the group", kind: "join" as const }, ...f].slice(0, 20));
     queryClient.invalidateQueries({ queryKey: ["group", groupId] });
     queryClient.invalidateQueries({ queryKey: ["leaderboard", groupId] });
   });
@@ -34,15 +53,28 @@ export default function GroupPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-semibold">{g.name}</h1>
-          <p className="mt-1 text-slate-400">
-            Group streak <span className="font-mono text-emerald-400">{g.current_streak}</span> ·
-            best <span className="font-mono">{g.best_streak}</span>
-          </p>
+          <Link href="/groups" className="text-xs text-faint transition-colors hover:text-fg">
+            ← All groups
+          </Link>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{g.name}</h1>
+          <div className="mt-3 flex items-center gap-6">
+            <Stat
+              label="Current streak"
+              value={g.current_streak}
+              unit="days"
+              highlight={g.current_streak > 0}
+            />
+            <div className="h-8 w-px bg-line" />
+            <Stat label="Best" value={g.best_streak} unit="days" />
+            <div className="h-8 w-px bg-line" />
+            <Stat label="Members" value={g.members.length} />
+          </div>
         </div>
-        <StreakStrip days={g.recent_days} />
+        <div className="w-full rounded-xl border border-line bg-surface p-4 sm:w-auto">
+          <StreakGraph days={g.recent_days} />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -53,13 +85,29 @@ export default function GroupPage() {
         <div className="space-y-6">
           <Leaderboard groupId={groupId} />
           <Card>
-            <h2 className="mb-3 font-semibold">Live activity</h2>
+            <CardHeader
+              title={
+                <span className="flex items-center gap-2">
+                  <span className="animate-pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
+                  Live activity
+                </span>
+              }
+            />
             {feed.length === 0 ? (
-              <p className="text-sm text-slate-500">Solves and joins show up here as they happen.</p>
+              <Empty>Solves and joins show up here as they happen.</Empty>
             ) : (
-              <ul className="space-y-1 text-sm">
+              <ul className="space-y-3">
                 {feed.map((item, i) => (
-                  <li key={`${i}-${item}`}>{item}</li>
+                  <li key={`${item.at}-${i}`} className="flex items-center gap-3 text-sm">
+                    <Avatar name={item.who} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium">{item.who}</span>{" "}
+                      <span className={item.kind === "solve" ? "text-accent" : "text-muted"}>
+                        {item.text}
+                      </span>
+                    </span>
+                    <span className="font-mono text-[11px] text-faint">{clockTime(item.at)}</span>
+                  </li>
                 ))}
               </ul>
             )}
@@ -68,6 +116,28 @@ export default function GroupPage() {
           {isLeader && <TomorrowPicker group={g} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  unit,
+  highlight,
+}: {
+  label: string;
+  value: number;
+  unit?: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] tracking-wide text-faint uppercase">{label}</p>
+      <p className="mt-0.5 font-mono text-xl font-semibold">
+        <span className={highlight ? "text-accent" : "text-fg"}>{value}</span>
+        {unit && <span className="ml-1 text-xs font-normal text-faint">{unit}</span>}
+      </p>
     </div>
   );
 }
@@ -85,60 +155,67 @@ function TodayCard({ group: g }: { group: Group }) {
   const now = useNow();
   const required = g.members.filter((m) => m.eligible_today);
   const done = required.filter((m) => m.solved_today).length;
+  const pct = required.length ? (100 * done) / required.length : 0;
+  const allDone = required.length > 0 && done === required.length;
   return (
-    <Card>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Today · {g.today}</p>
-          {g.today_problem ? (
-            <>
-              <h2 className="mt-1 text-xl font-semibold">{g.today_problem.title}</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                {g.today_problem.difficulty} · {g.today_problem.topics.join(", ")}
-              </p>
-            </>
-          ) : (
-            <h2 className="mt-1 text-xl text-slate-400">No problem yet. Sync problems first.</h2>
+    <Card padded={false} className="overflow-hidden">
+      <div className="relative p-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,#3fd68f14,transparent_60%)]"
+        />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Eyebrow>Today · {g.today}</Eyebrow>
+            {g.today_problem ? (
+              <>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+                  {g.today_problem.title}
+                </h2>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <Difficulty level={g.today_problem.difficulty} />
+                  {g.today_problem.topics.map((t) => (
+                    <Badge key={t}>{t}</Badge>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <h2 className="mt-2 text-xl text-muted">No problem yet. Sync problems first.</h2>
+            )}
+          </div>
+          {g.today_problem && (
+            <Link href={`/g/${g.id}/today`}>
+              <Button className="h-10 px-5">Solve now →</Button>
+            </Link>
           )}
         </div>
-        {g.today_problem && (
-          <Link href={`/g/${g.id}/today`}>
-            <Button>Solve</Button>
-          </Link>
-        )}
       </div>
-      <div className="mt-5">
-        <div className="mb-1 flex justify-between text-sm text-slate-400">
-          <span>
-            {done}/{required.length} required members solved
+      <div className="border-t border-line bg-sunken/60 px-6 py-4">
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-muted">
+            <span className={cx("font-mono font-semibold", allDone ? "text-accent" : "text-fg")}>
+              {done}/{required.length}
+            </span>{" "}
+            required members solved
           </span>
-          <span>day ends in {untilText(g.day_ends_at, now)}</span>
+          <span className="font-mono text-xs text-faint">
+            day ends in <span className="text-muted">{untilText(g.day_ends_at, now)}</span>
+          </span>
         </div>
-        <div className="h-2 overflow-hidden rounded bg-slate-800">
-          <div
-            className="h-full bg-emerald-500 transition-all"
-            style={{ width: `${required.length ? (100 * done) / required.length : 0}%` }}
-          />
+        <div className="flex gap-1">
+          {required.length === 0 ? (
+            <div className="h-1.5 flex-1 rounded-full bg-line" />
+          ) : (
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          )}
         </div>
       </div>
     </Card>
-  );
-}
-
-function StreakStrip({ days }: { days: Group["recent_days"] }) {
-  const ordered = [...days].reverse();
-  return (
-    <div className="flex gap-1" title="Recent days, oldest first">
-      {ordered.map((d) => (
-        <div
-          key={d.day}
-          title={`${d.day}: ${d.solved_count}/${d.eligible_count}`}
-          className={`h-6 w-6 rounded ${
-            d.kept === null ? "bg-slate-700" : d.kept ? "bg-emerald-500" : "bg-rose-500/70"
-          }`}
-        />
-      ))}
-    </div>
   );
 }
 
@@ -156,29 +233,49 @@ function Members({ group: g, isLeader }: { group: Group; isLeader: boolean }) {
   });
   return (
     <Card>
-      <h2 className="mb-3 font-semibold">Members</h2>
-      <ul className="divide-y divide-slate-800">
+      <CardHeader title="Members" hint={`${g.members.length} in this group`} />
+      <ul className="-mx-2">
         {g.members.map((m) => (
-          <li key={m.user_id} className="flex items-center justify-between py-2 text-sm">
-            <span>
-              <span className={m.solved_today ? "text-emerald-400" : "text-slate-500"}>
-                {m.solved_today ? "●" : "○"}
-              </span>{" "}
-              {m.display_name}
-              {m.role === "leader" && <span className="ml-2 text-xs text-slate-500">leader</span>}
-              {m.paused && <span className="ml-2 text-xs text-amber-400">paused</span>}
-              {!m.paused && !m.eligible_today && (
-                <span className="ml-2 text-xs text-slate-500">counts from tomorrow</span>
+          <li
+            key={m.user_id}
+            className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-raised"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar name={m.display_name} ring={m.solved_today ? "accent" : "none"} />
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  <span className="truncate">{m.display_name}</span>
+                  {m.role === "leader" && <Badge>leader</Badge>}
+                </p>
+                <p className="mt-0.5 text-xs text-faint">
+                  {m.paused
+                    ? "Paused, not counted toward the streak"
+                    : !m.eligible_today
+                      ? "Counts from tomorrow"
+                      : m.solved_today
+                        ? "Solved today"
+                        : "Hasn't solved yet"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {m.paused ? (
+                <Badge tone="warn">paused</Badge>
+              ) : m.solved_today ? (
+                <Badge tone="accent">✓ solved</Badge>
+              ) : m.eligible_today ? (
+                <Badge>pending</Badge>
+              ) : null}
+              {isLeader && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => pause.mutate({ userId: m.user_id, paused: !m.paused })}
+                >
+                  {m.paused ? "Unpause" : "Pause"}
+                </Button>
               )}
-            </span>
-            {isLeader && (
-              <button
-                className="text-xs text-slate-400 hover:text-slate-100"
-                onClick={() => pause.mutate({ userId: m.user_id, paused: !m.paused })}
-              >
-                {m.paused ? "Unpause" : "Pause"}
-              </button>
-            )}
+            </div>
           </li>
         ))}
       </ul>
@@ -186,6 +283,12 @@ function Members({ group: g, isLeader }: { group: Group; isLeader: boolean }) {
     </Card>
   );
 }
+
+const RANK_STYLES = [
+  "bg-[#f5cf5b1f] text-gold border-[#f5cf5b40]",
+  "bg-[#c9d1dc14] text-[#c9d1dc] border-[#c9d1dc30]",
+  "bg-[#e0a37a14] text-[#e0a37a] border-[#e0a37a30]",
+];
 
 function Leaderboard({ groupId }: { groupId: number }) {
   const [period, setPeriod] = useState<"day" | "week">("day");
@@ -200,34 +303,45 @@ function Leaderboard({ groupId }: { groupId: number }) {
   });
   return (
     <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="font-semibold">Leaderboard</h2>
-        <div className="flex gap-1 text-xs">
-          {(["day", "week"] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`rounded px-2 py-1 ${period === p ? "bg-slate-700" : "text-slate-400"}`}
-            >
-              {p === "day" ? "Today" : "This week"}
-            </button>
-          ))}
-        </div>
-      </div>
+      <CardHeader
+        title="Leaderboard"
+        action={
+          <Segmented
+            value={period}
+            onChange={setPeriod}
+            options={[
+              { value: "day", label: "Today" },
+              { value: "week", label: "Week" },
+            ]}
+          />
+        }
+      />
       {!board.data ? (
         <Loading />
       ) : board.data.entries.length === 0 ? (
-        <p className="text-sm text-slate-500">No solves yet.</p>
+        <Empty>No solves yet. First one takes the top spot.</Empty>
       ) : (
-        <ol className="space-y-1 text-sm">
+        <ol className="space-y-1.5">
           {board.data.entries.map((e) => (
-            <li key={e.user_id} className="flex justify-between">
-              <span>
-                <span className="mr-2 font-mono text-slate-500">{e.rank}.</span>
-                {e.display_name}
+            <li
+              key={e.user_id}
+              className={cx(
+                "flex items-center gap-3 rounded-lg px-2 py-2",
+                e.rank === 1 && "bg-[#f5cf5b0a]",
+              )}
+            >
+              <span
+                className={cx(
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border font-mono text-xs font-semibold",
+                  RANK_STYLES[e.rank - 1] ?? "border-line text-faint",
+                )}
+              >
+                {e.rank}
               </span>
-              <span className="font-mono text-slate-400">
-                {period === "week" ? `${e.solved} solved · ` : ""}
+              <Avatar name={e.display_name} size="sm" />
+              <span className="min-w-0 flex-1 truncate text-sm">{e.display_name}</span>
+              <span className="text-right font-mono text-xs text-muted">
+                {period === "week" && <span className="text-fg">{e.solved} · </span>}
                 {duration(e.seconds)}
               </span>
             </li>
@@ -251,24 +365,32 @@ function Invite({ group: g, isLeader }: { group: Group; isLeader: boolean }) {
   const link = typeof window === "undefined" ? "" : `${window.location.origin}/join/${g.invite_code}`;
   return (
     <Card>
-      <h2 className="mb-2 font-semibold">Invite</h2>
-      <p className="font-mono text-lg tracking-widest">{g.invite_code}</p>
-      <div className="mt-3 flex gap-2">
+      <CardHeader title="Invite friends" hint="Share the code or send the link." />
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-line-strong bg-sunken px-4 py-3">
+        <span className="font-mono text-lg font-semibold tracking-[0.25em]">{g.invite_code}</span>
         <Button
-          variant="secondary"
+          variant={copied ? "secondary" : "primary"}
+          size="sm"
           onClick={async () => {
             await navigator.clipboard.writeText(link);
             setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
           }}
         >
-          {copied ? "Copied" : "Copy link"}
+          {copied ? "✓ Copied" : "Copy link"}
         </Button>
-        {isLeader && (
-          <Button variant="secondary" onClick={() => rotate.mutate()} disabled={rotate.isPending}>
-            New code
-          </Button>
-        )}
       </div>
+      {isLeader && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-2 -ml-2"
+          onClick={() => rotate.mutate()}
+          disabled={rotate.isPending}
+        >
+          ↻ Generate new code
+        </Button>
+      )}
     </Card>
   );
 }
@@ -292,22 +414,22 @@ function TomorrowPicker({ group: g }: { group: Group }) {
   });
   return (
     <Card>
-      <h2 className="mb-2 font-semibold">Tomorrow&apos;s problem</h2>
-      <p className="mb-3 text-sm text-slate-400">
-        {g.tomorrow_problem ? g.tomorrow_problem.title : "Picked automatically at midnight."}
+      <CardHeader title="Tomorrow's problem" hint={`Leader only · ${tomorrow}`} />
+      <p className="mb-3 text-sm">
+        {g.tomorrow_problem ? (
+          <span className="font-medium">{g.tomorrow_problem.title}</span>
+        ) : (
+          <span className="text-muted">Picked automatically at midnight.</span>
+        )}
       </p>
-      <select
-        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-        value=""
-        onChange={(e) => e.target.value && set.mutate(e.target.value)}
-      >
-        <option value="">Choose a problem…</option>
+      <Select value="" onChange={(e) => e.target.value && set.mutate(e.target.value)}>
+        <option value="">{g.tomorrow_problem ? "Change problem…" : "Choose a problem…"}</option>
         {problems.data?.map((p) => (
           <option key={p.slug} value={p.slug}>
             {p.title} ({p.difficulty})
           </option>
         ))}
-      </select>
+      </Select>
       <ErrorText error={set.error} />
     </Card>
   );
