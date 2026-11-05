@@ -109,12 +109,15 @@ def run_tests(
     reveal_all = all(t.sample for t in tests)
     first_missing = next((i for i in range(len(tests)) if i not in outcomes), None)
     if first_missing is not None:
-        if run.oom_killed or (run.exit_code == 137 and not run.timed_out):
+        # Our own kills (timeout, output cap) also exit 137, so check them before guessing OOM.
+        if run.oom_killed:
             verdict, error = "MLE", None
         elif run.timed_out:
             verdict, error = "TLE", None
         elif run.output_exceeded:
             verdict, error = "RE", "Output limit exceeded"
+        elif run.exit_code == 137:
+            verdict, error = "MLE", None
         else:
             detail = meta.get("fatal") or run.stderr.strip() or f"exit code {run.exit_code}"
             verdict, error = "RE", detail if reveal_all else HIDDEN_ERROR
