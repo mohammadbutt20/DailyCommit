@@ -11,7 +11,7 @@ from dailycommit.problems.loader import load_all, load_judge_packs
 from dailycommit.problems.schema import Signature
 from dailycommit.sandbox.backend import DockerSandbox
 from dailycommit.sandbox.languages import LANGUAGES
-from dailycommit.sandbox.runner import HIDDEN_ERROR, TestInput, run_tests
+from dailycommit.sandbox.runner import HIDDEN_ERROR, TestInput, judge_submission, run_tests
 from tests.conftest import PROBLEMS_DIR
 
 pytestmark = pytest.mark.sandbox
@@ -33,11 +33,14 @@ def sandbox() -> DockerSandbox:
     return DockerSandbox()
 
 
-def run(sandbox, lang: str, body: str, tests=None):
+def run_code(lang: str, body: str) -> str:
     if lang == "java":
-        code = f"{JAVA_PRELUDE}class Solution {{\n    public String solve(int n) throws Exception {{\n{body}\n    }}\n}}\n"
-    else:
-        code = f"{CPP_PRELUDE}class Solution {{\npublic:\n    string solve(int n) {{\n{body}\n    }}\n}};\n"
+        return f"{JAVA_PRELUDE}class Solution {{\n    public String solve(int n) throws Exception {{\n{body}\n    }}\n}}\n"
+    return f"{CPP_PRELUDE}class Solution {{\npublic:\n    string solve(int n) {{\n{body}\n    }}\n}};\n"
+
+
+def run(sandbox, lang: str, body: str, tests=None):
+    code = run_code(lang, body)
     tests = tests or [TestInput({"n": 1}, "ok", True), TestInput({"n": 2}, "ok", True)]
     return run_tests(sandbox, LANGUAGES[lang], code, SIG, tests, "exact", LIMITS)
 
@@ -159,11 +162,16 @@ def test_environment(sandbox, lang, check):
 @pytest.mark.parametrize("lang", COMPILED)
 def test_runtime_error_details_and_prints_only_on_samples(sandbox, lang):
     tests = [TestInput({"n": 1}, "ok", True), TestInput({"n": 2}, "ok", False)]
+    # One container with a hidden test in it: nothing the program prints or raises comes back.
     report = run(sandbox, lang, B["print_and_throw"][lang], tests=tests)
     assert [r.verdict for r in report.results] == ["RE", "RE"]
+    assert all(r.error == HIDDEN_ERROR and r.stdout is None for r in report.results)
+    # As the worker judges it, the samples run on their own and show their details.
+    code = run_code(lang, B["print_and_throw"][lang])
+    report = judge_submission(sandbox, LANGUAGES[lang], code, SIG, tests, "exact", LIMITS)
+    assert [r.verdict for r in report.results] == ["RE", "skipped"]
     assert "boom 1" in report.results[0].error
     assert "debug 1" in report.results[0].stdout
-    assert report.results[1].error == HIDDEN_ERROR and report.results[1].stdout is None
 
 
 def test_cpp_segfault_is_named(sandbox):

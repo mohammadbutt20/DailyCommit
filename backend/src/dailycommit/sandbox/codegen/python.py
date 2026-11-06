@@ -40,6 +40,14 @@ def emit(obj):
     _out.flush()
 
 
+def out_of_memory():
+    # Same as the Java and C++ harnesses: the runner reads exit code 137 as a memory-limit kill.
+    try:
+        _out.flush()
+    finally:
+        os._exit(137)
+
+
 def user_trace(e):
     frames = [f for f in traceback.extract_tb(e.__traceback__) if f.filename.endswith("solution.py")]
     lines = traceback.format_list(frames[-5:]) + traceback.format_exception_only(e)
@@ -55,6 +63,8 @@ def main():
     sys.stdout = sys.stderr = captured
     try:
         import solution
+    except MemoryError:
+        out_of_memory()
     except SyntaxError as e:
         emit({"ce": "".join(traceback.format_exception_only(e))[-2000:]})
         return
@@ -66,6 +76,7 @@ def main():
     except BaseException:
         emit({"fatal": "class Solution with method %s(...) was not found" % FUNCTION})
         return
+    emit({"ready": True})  # the worker times each test from here
     for i, case in enumerate(cases):
         args = [case[p] for p in PARAMS]
         captured.seek(0)
@@ -75,6 +86,8 @@ def main():
         result = None
         try:
             result = fn(*args)
+        except MemoryError:
+            out_of_memory()
         except BaseException as e:
             err = user_trace(e)
         ms = int((time.perf_counter() - start) * 1000)
@@ -88,7 +101,10 @@ def main():
     emit({"done": True})
 
 
-main()
+try:
+    main()
+except MemoryError:
+    out_of_memory()
 """
 
 

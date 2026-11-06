@@ -15,6 +15,16 @@ SANDBOX_LABEL = "dailycommit.sandbox"
 MAX_STDOUT_BYTES = 1_000_000
 STDERR_TAIL_BYTES = 4_000
 
+# Memory check when a run times out (so a memory bomb that the kernel is slow to OOM-kill shows
+# as MLE, not TLE). A sampler thread reads the container's cgroup memory while a test has been
+# silent for over a quarter of its budget; the watchdog only looks at the latest sample, so the
+# check never delays a kill. One stats call is ~20 ms; each is capped by its own client timeout.
+# (Most bombs never get here: the data limit in languages.py makes huge allocations fail fast.)
+STATS_TIMEOUT_S = 0.5
+STATS_INTERVAL_S = 0.1
+STATS_MAX_AGE_S = 0.35  # older samples are ignored: no fresh data means TLE
+MEMORY_EXHAUSTED_FRACTION = 0.9
+
 
 class SandboxError(Exception):
     """Infrastructure failure (Docker down, image missing). Not the user's fault."""
@@ -37,6 +47,7 @@ class RunOutcome:
     oom_killed: bool = False
     timed_out: bool = False
     output_exceeded: bool = False
+    memory_exhausted: bool = False  # timed out while at its memory limit (see memory_exhausted)
     stderr: str = ""
 
 
@@ -46,6 +57,20 @@ LineHandler = Callable[[str], bool]
 
 class SandboxBackend(Protocol):
     def run(self, req: RunRequest, on_line: LineHandler) -> RunOutcome: ...
+
+
+def memory_exhausted(stats: object) -> bool:
+    """Whether a Docker stats payload shows the container at its memory limit: working memory
+    (usage minus reclaimable inactive page cache) at 90% of the limit or more. Anything
+    missing or malformed means no (the caller then reports TLE)."""
+    try:
+        mem = stats["memory_stats"]  # type: ignore[index]
+        usage, limit = int(mem["usage"]), int(mem["limit"])
+        extra = mem.get("stats") or {}
+        cache = int(extra.get("inactive_file", extra.get("total_inactive_file", 0)))
+    except (KeyError, TypeError, ValueError):
+        return False
+    return limit > 0 and usage - cache >= MEMORY_EXHAUSTED_FRACTION * limit
 
 
 def _tar(files: dict[str, str]) -> bytes:
@@ -72,6 +97,8 @@ class DockerSandbox:
 
         self._docker = docker
         self.client = docker.from_env()
+        # Separate low-level client so a slow stats call can't hold up anything else.
+        self.stats_api = docker.from_env(timeout=STATS_TIMEOUT_S).api
         self.runtime = runtime or settings.sandbox_runtime
 
     def reap_orphans(self) -> int:
@@ -158,17 +185,36 @@ class DockerSandbox:
             except self._docker.errors.DockerException:
                 pass
 
+        sample: dict[str, object] = {}  # latest memory reading: {"at": monotonic, "full": bool}
+
+        def sampler() -> None:
+            while not finished.wait(STATS_INTERVAL_S):
+                with lock:
+                    silent = time.monotonic() - state["last"] > state["allow"] / 4
+                if not silent:
+                    continue
+                try:
+                    stats = self.stats_api.stats(container.id, stream=False, one_shot=True)
+                except Exception:  # timeout, container gone, daemon trouble: no reading
+                    continue
+                sample.update(at=time.monotonic(), full=memory_exhausted(stats))
+
         def watchdog() -> None:
             while not finished.wait(0.05):
                 now = time.monotonic()
                 with lock:
                     idle_over = now - state["last"] > state["allow"]
                 if idle_over or now - started > req.deadline_s:
+                    # Decide from what's already known; never wait for Docker here.
+                    at = sample.get("at")
+                    fresh = isinstance(at, float) and now - at <= STATS_MAX_AGE_S
+                    outcome.memory_exhausted = bool(fresh and sample.get("full"))
                     outcome.timed_out = True
                     kill()
                     return
 
         threading.Thread(target=watchdog, daemon=True).start()
+        threading.Thread(target=sampler, daemon=True).start()
         try:
             total = 0
             pending = b""

@@ -209,8 +209,13 @@ function Workspace({ problem: p, groupId }: { problem: Problem; groupId: number 
         }),
       ),
     enabled: activeId !== null,
-    // Fallback if the WebSocket is down: poll until the verdict is in.
-    refetchInterval: (q) => (q.state.data?.status === "done" ? false : 2000),
+    // Fallback if the WebSocket is down: poll until the verdict is in. IE is provisional (a
+    // retried job can still replace it with the real result), so keep checking, slowly.
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      if (d?.status !== "done") return 2000;
+      return d.verdict === "IE" ? 10_000 : false;
+    },
   });
 
   useTopic(activeId !== null ? `submission:${activeId}` : null, (msg) => {

@@ -37,16 +37,38 @@ class Language:
         return f"{settings.sandbox_image_prefix}{self.id}:latest"
 
 
-def _compile_then_run(compile_argv: list[str], run_argv: list[str], mark: str) -> list[str]:
+# The C++ harness runs solutions on a thread with this much stack (codegen/cpp.py); the
+# mapping counts toward the data limit below, so it's added on top.
+CPP_SOLUTION_STACK_MB = 256
+
+
+def _data_limit(mb: int) -> str:
+    """`ulimit -d`: caps the program's heap (RLIMIT_DATA), so a huge allocation fails at once
+    (MemoryError / bad_alloc, which the harnesses turn into exit 137 = MLE) instead of racing
+    the kernel's OOM killer against the time limit. Set to the container's memory cap, so it
+    never allows less memory than before. Not used for Java: the JVM's reserved address space
+    doesn't fit it, and -Xmx already makes Java fail fast."""
+    return f"ulimit -d {mb * 1024}"
+
+
+def _compile_then_run(
+    compile_argv: list[str], run_argv: list[str], mark: str, data_mb: int | None = None
+) -> list[str]:
     """Compile inside the sandbox; on failure print the CE marker line and the compiler's
-    output (to stderr), otherwise exec the program with the marker as its last argument."""
+    output (to stderr), otherwise exec the program with the marker as its last argument. The
+    data limit (if any) applies to the program only, never to the compiler."""
+    limit = f"{_data_limit(data_mb)} && " if data_mb else ""
     script = (
         f"{shlex.join(compile_argv)} >/work/.ce 2>&1 || {{ "
         f"printf '%s%s\\n' \"$1\" {shlex.quote(COMPILE_FAILED)}; "
         f"head -c {COMPILE_ERROR_BYTES} /work/.ce >&2; exit 1; }}; "
-        f'exec {shlex.join(run_argv)} "$1"'
+        f'{limit}exec {shlex.join(run_argv)} "$1"'
     )
     return ["sh", "-c", script, "sh", mark]
+
+
+PYTHON_OVERHEAD_MB = 32
+CPP_OVERHEAD_MB = 96
 
 
 PYTHON = Language(
@@ -57,9 +79,15 @@ PYTHON = Language(
     extension=".py",
     starter_code=py.starter_code,
     harness_files=lambda sig: {"harness.py": py.harness(sig)},
-    run_command=lambda mark, _mem: ["python3", "/work/harness.py", mark],
+    run_command=lambda mark, mem: [
+        "sh",
+        "-c",
+        f'{_data_limit(mem + PYTHON_OVERHEAD_MB)} && exec python3 /work/harness.py "$1"',
+        "sh",
+        mark,
+    ],
     startup_s=3.0,
-    memory_overhead_mb=32,
+    memory_overhead_mb=PYTHON_OVERHEAD_MB,
 )
 
 _GSON = "/opt/gson/gson.jar"
@@ -113,7 +141,7 @@ CPP = Language(
     extension=".cpp",
     starter_code=cpp.starter_code,
     harness_files=lambda sig: {"main.cpp": cpp.harness(sig)},
-    run_command=lambda mark, _mem: _compile_then_run(
+    run_command=lambda mark, mem: _compile_then_run(
         [
             "g++",
             *CPP_FLAGS,
@@ -129,9 +157,10 @@ CPP = Language(
         ],
         ["/work/main"],
         mark,
+        data_mb=mem + CPP_OVERHEAD_MB + CPP_SOLUTION_STACK_MB,
     ),
     startup_s=10.0,
-    memory_overhead_mb=96,
+    memory_overhead_mb=CPP_OVERHEAD_MB,
 )
 
 LANGUAGES: dict[str, Language] = {lang.id: lang for lang in (PYTHON, JAVA, CPP)}

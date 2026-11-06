@@ -52,6 +52,7 @@ def verify(
                 tests,
                 p.compare,
                 p.limits.model_dump(),
+                reveal_output=True,  # trusted reference code: show why it failed
             )
             status = "ok" if report.verdict == "AC" else "FAIL"
             print(f"  {status} {p.slug} [{lang_id}] {report.passed}/{report.total}")

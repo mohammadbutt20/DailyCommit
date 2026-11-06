@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     max_code_bytes: int = 64_000
     submissions_per_minute: int = 10
     worker_max_jobs: int = 4
+    # A submission still queued/running after this long is marked IE by the scheduler. Longer
+    # than any legitimate job: two tries of job_timeout (180 s) plus arq's crash-detection delay.
+    submission_stale_after_s: int = 600
 
     sandbox_runtime: str = "runc"  # "runsc" (gVisor) on the VPS
     sandbox_image_prefix: str = "dailycommit-sandbox-"
