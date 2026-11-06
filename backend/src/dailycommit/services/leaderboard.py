@@ -19,7 +19,8 @@ def _anchor(period: Period, day: date) -> date:
 
 
 def _key(group_id: int, period: Period, day: date) -> str:
-    return f"lb:{group_id}:{period}:{_anchor(period, day).isoformat()}"
+    # v2: entries carry solved_at (older cached payloads don't).
+    return f"lb2:{group_id}:{period}:{_anchor(period, day).isoformat()}"
 
 
 async def get_leaderboard(
@@ -64,6 +65,7 @@ async def get_leaderboard(
             "display_name": names.get(e.user_id, "?"),
             "solved": e.solved,
             "seconds": e.seconds,
+            "solved_at": e.solved_at.isoformat() if e.solved_at else None,
         }
         for e in ranked
     ]

@@ -15,7 +15,11 @@ class Submission(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     problem_id: Mapped[int] = mapped_column(ForeignKey("problems.id"), index=True)
     language: Mapped[str] = mapped_column(String(16))
-    kind: Mapped[str] = mapped_column(String(8))  # run (samples only) | submit (all tests)
+    # run: samples only. submit: all tests, can credit today's streak. practice: all tests,
+    # never credited (past problems).
+    kind: Mapped[str] = mapped_column(String(8))
+    # The group it was made from (daily page or a past problem); NULL for old rows.
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="SET NULL"))
     code: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="queued")  # queued | running | done
     verdict: Mapped[str | None] = mapped_column(String(4))  # AC WA TLE MLE RE CE IE

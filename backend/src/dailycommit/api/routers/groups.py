@@ -31,6 +31,7 @@ from dailycommit.schemas import (
     GroupJoinIn,
     GroupRef,
     GroupSummary,
+    HistoryDayOut,
     InviteOut,
     LeaderboardEntry,
     LeaderboardOut,
@@ -38,13 +39,21 @@ from dailycommit.schemas import (
     MemberUpdateIn,
     ProblemSummary,
     StreakDayOut,
+    TimezoneOption,
     TimezonesOut,
 )
 from dailycommit.services import leaderboard
 from dailycommit.services.activity import group_activity
-from dailycommit.services.clock import group_tz, is_valid_timezone, today, valid_timezones
+from dailycommit.services.clock import (
+    FRIENDLY_ZONES,
+    group_tz,
+    is_valid_timezone,
+    today,
+    zone_label,
+)
 from dailycommit.services.daily import daily_problem, ensure_daily_problem
 from dailycommit.services.events import group_topic, publish
+from dailycommit.services.history import group_history
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -85,6 +94,8 @@ async def group_summaries(db: AsyncSession, user_id: int) -> list[GroupSummary]:
             GroupSummary(
                 id=group.id,
                 name=group.name,
+                timezone=group.timezone,
+                timezone_label=zone_label(group.timezone),
                 role=role,
                 member_count=count or 0,
                 current_streak=group.current_streak,
@@ -98,8 +109,11 @@ async def group_summaries(db: AsyncSession, user_id: int) -> list[GroupSummary]:
 
 @router.get("/timezones", response_model=TimezonesOut)
 async def list_timezones(user: CurrentUser) -> TimezonesOut:
-    """IANA zones a group can use, plus the server default for new groups."""
-    return TimezonesOut(default=settings.day_timezone, zones=sorted(valid_timezones()))
+    """The zones offered for a new group (friendly names, real IANA ids), and the default."""
+    return TimezonesOut(
+        default=settings.day_timezone,
+        zones=[TimezoneOption(id=z, label=label) for z, label in FRIENDLY_ZONES],
+    )
 
 
 @router.get("", response_model=list[GroupSummary])
@@ -214,6 +228,7 @@ async def group_detail(group_id: int, user: CurrentUser, db: DB) -> GroupDetail:
         name=group.name,
         invite_code=group.invite_code,
         timezone=group.timezone,
+        timezone_label=zone_label(group.timezone),
         my_role=me.role,
         current_streak=group.current_streak,
         best_streak=group.best_streak,
@@ -251,6 +266,27 @@ async def get_activity(
         ActivityOut.model_validate(a, from_attributes=True)
         for a in await group_activity(db, group_id, limit)
     ]
+
+
+@router.get("/{group_id}/history", response_model=list[HistoryDayOut])
+async def get_history(group_id: int, user: CurrentUser, db: DB) -> list[HistoryDayOut]:
+    """Every daily problem up to today, newest first: whether you solved it, how many did."""
+    await require_member(db, group_id, user.id)
+    group = await db.get(Group, group_id)
+    assert group is not None
+    return await group_history(db, group_id, user.id, today(group))
+
+
+@router.get("/{group_id}/history/{day}", response_model=HistoryDayOut)
+async def get_history_day(group_id: int, day: date, user: CurrentUser, db: DB) -> HistoryDayOut:
+    """One past (or today's) problem, for practicing it. Future days are never shown."""
+    await require_member(db, group_id, user.id)
+    group = await db.get(Group, group_id)
+    assert group is not None
+    found = await group_history(db, group_id, user.id, today(group), day=day)
+    if not found:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No problem for that day")
+    return found[0]
 
 
 @router.patch("/{group_id}/members/{user_id}", status_code=204)

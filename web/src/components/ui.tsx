@@ -272,3 +272,8 @@ export function Loading() {
     </div>
   );
 }
+
+/** A placeholder block shown while content loads (instead of a "Loading…" flash). */
+export function Skeleton({ className }: { className?: string }) {
+  return <span aria-hidden className={cx("block animate-pulse rounded bg-raised", className)} />;
+}

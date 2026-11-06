@@ -34,8 +34,9 @@ Dev login works with no setup. To use real Discord accounts:
 3. **Submit**: the daily problem is a LeetCode problem with a judge pack, so the page shows LeetCode's statement next to the editor. Submit in Python, Java or C++ (reference solutions are in `problems/leetcode/<slug>/solutions/`, or `problems/<slug>/solutions/` for local problems); tests turn green one by one, then *Accepted*. A LeetCode problem without a pack (a leader can pick any LeetCode URL) shows **Solve on LeetCode** instead: link your LeetCode account in the side panel (paste the code it gives you into your LeetCode profile Summary, then Verify), get *Accepted* on leetcode.com and click **I solved it, check now**, or wait a few minutes for the automatic check.
 4. Open a second browser window (private mode) and log in as **Chen** on the group page: Bob's solve appears in the live activity feed, the member checklist and the leaderboard update without a refresh.
 5. **Sandbox:** submit `while True: pass` (TLE), a memory bomb such as `x = [0] * 10**9` (MLE), or `import socket; socket.create_connection(("1.1.1.1", 80))` (RE, no network). `make test-sandbox` runs the full adversarial suite.
-6. **Groups:** create a new group, copy its invite link, and open it as another user to join. As leader (Alice), pause a member or pick tomorrow's problem.
-7. **Streak rollover:** the scheduler evaluates each group's day at midnight in that group's timezone (picked when the group is created; `DAY_TIMEZONE` is the default) and assigns the next problem.
+6. **History:** on the group page, **Past problems** lists every daily problem with who solved it; open one to practice it in the editor (practice never touches the streak). The header's **My history** shows your submissions (open one to see your code) and your stats.
+7. **Groups:** create a new group, copy its invite link, and open it as another user to join. As leader (Alice), pause a member or pick tomorrow's problem.
+8. **Streak rollover:** the scheduler evaluates each group's day at midnight in that group's timezone (picked when the group is created; `DAY_TIMEZONE` is the default) and assigns the next problem.
 
 ## Commands
 

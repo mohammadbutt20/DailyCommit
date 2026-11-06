@@ -57,6 +57,8 @@ class LeetCodeCheckOut(BaseModel):
 class GroupSummary(BaseModel):
     id: int
     name: str
+    timezone: str  # IANA zone that defines the group's day
+    timezone_label: str  # how to show it, e.g. "Eastern (ET)"
     role: str
     member_count: int
     current_streak: int
@@ -76,9 +78,14 @@ class GroupCreateIn(BaseModel):
     timezone: str | None = Field(default=None, max_length=64)
 
 
+class TimezoneOption(BaseModel):
+    id: str  # IANA zone, stored on the group
+    label: str  # e.g. "Eastern (ET)"
+
+
 class TimezonesOut(BaseModel):
     default: str
-    zones: list[str]
+    zones: list[TimezoneOption]
 
 
 class GroupJoinIn(BaseModel):
@@ -124,6 +131,7 @@ class GroupDetail(BaseModel):
     name: str
     invite_code: str
     timezone: str
+    timezone_label: str
     my_role: str
     current_streak: int
     best_streak: int
@@ -152,8 +160,9 @@ class LeaderboardEntry(BaseModel):
     rank: int
     user_id: int
     display_name: str
-    solved: int
-    seconds: int
+    solved: int  # week: days solved
+    seconds: int  # time-to-solve from the day's start (week: summed); the ranking tie-break
+    solved_at: datetime | None = None  # day: when they solved it (shown in the group's zone)
 
 
 class LeaderboardOut(BaseModel):
@@ -195,8 +204,11 @@ class ProblemDetail(ProblemSummary):
 class SubmissionIn(BaseModel):
     problem_slug: str
     language: str
-    kind: Literal["run", "submit"]
+    # run: sample tests. submit: every test, credits today's problem. practice: every test,
+    # never credited (past problems).
+    kind: Literal["run", "submit", "practice"]
     code: str
+    group_id: int | None = None  # the group it's made from; must be one of yours
 
 
 class SubmissionResultOut(BaseModel):
@@ -212,9 +224,17 @@ class SubmissionResultOut(BaseModel):
     error: str | None = None
 
 
+class GroupRefOut(BaseModel):
+    id: int
+    name: str
+
+
 class SubmissionOut(BaseModel):
     id: int
     problem_slug: str
+    problem_title: str
+    group: GroupRefOut | None
+    code: str  # the submitter's own code (this endpoint is owner-only)
     language: str
     kind: str
     status: str
@@ -226,3 +246,54 @@ class SubmissionOut(BaseModel):
     created_at: datetime
     finished_at: datetime | None
     results: list[SubmissionResultOut]
+
+
+class HistoryDayOut(BaseModel):
+    """One day of a group's past problems."""
+
+    day: date
+    is_today: bool
+    problem: ProblemSummary
+    solved_by_me: bool
+    solved_count: int
+    # Evaluated days: who counted that day. Today: current unpaused members.
+    member_count: int
+    kept: bool | None  # the day's streak outcome; None if not evaluated yet or nobody counted
+
+
+class MySubmissionOut(BaseModel):
+    id: int
+    problem_slug: str
+    problem_title: str
+    difficulty: str
+    group: GroupRefOut | None
+    language: str
+    kind: str
+    status: str
+    verdict: str | None
+    passed: int
+    total: int
+    runtime_ms: int | None
+    created_at: datetime
+
+
+class MySubmissionsOut(BaseModel):
+    items: list[MySubmissionOut]
+    next_before_id: int | None  # pass as before_id for the next (older) page
+
+
+class GroupStreakOut(BaseModel):
+    group_id: int
+    group_name: str
+    current_streak: int
+    best_streak: int
+
+
+class StatsOut(BaseModel):
+    problems_solved: int
+    submissions: int  # judged submits and practice runs (not samples-only runs, not IE)
+    accepted: int
+    accepted_rate: float | None  # accepted / submissions; None with no submissions yet
+    by_language: dict[str, int]  # distinct problems solved per language
+    by_difficulty: dict[str, int]  # distinct problems solved per difficulty
+    streaks: list[GroupStreakOut]

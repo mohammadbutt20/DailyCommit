@@ -19,12 +19,14 @@ import {
   Loading,
   Segmented,
   Select,
+  Skeleton,
   Spinner,
   cx,
 } from "@/components/ui";
 import { api, type Schemas, unwrap } from "@/lib/api/client";
-import { type FeedItem, feedText, fromHistory, fromLive, isSameLocalDay, mergeFeed } from "@/lib/feed";
-import { clockTime, duration, nextDay, shortDate, untilText } from "@/lib/format";
+import { type FeedItem, feedText, fromHistory, fromLive, mergeFeed } from "@/lib/feed";
+import { clockTime, groupTime, nextDay, untilText } from "@/lib/format";
+import { memberStatus } from "@/lib/members";
 import { useGroup, useRequireMe } from "@/lib/queries";
 import { useTopic } from "@/lib/ws";
 
@@ -67,7 +69,15 @@ export default function GroupPage() {
           <Link href="/groups" className="text-xs text-faint transition-colors hover:text-fg">
             ← All groups
           </Link>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{g.name}</h1>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h1 className="text-3xl font-semibold tracking-tight">{g.name}</h1>
+            <Link
+              href={`/g/${g.id}/history`}
+              className="text-sm text-muted transition-colors hover:text-fg"
+            >
+              Past problems →
+            </Link>
+          </div>
           <div className="mt-3 flex items-center gap-6">
             <Stat
               label="Current streak"
@@ -92,7 +102,7 @@ export default function GroupPage() {
           <Members group={g} isLeader={isLeader} />
         </div>
         <div className="space-y-6">
-          <Leaderboard groupId={groupId} />
+          <Leaderboard groupId={groupId} timezone={g.timezone} />
           <Card>
             <CardHeader
               title={
@@ -122,7 +132,7 @@ export default function GroupPage() {
                       </span>
                     </span>
                     <span className="font-mono text-[11px] text-faint">
-                      {isSameLocalDay(item.at, Date.now()) ? clockTime(item.at) : shortDate(item.at)}
+                      {groupTime(item.at, g.timezone)}
                     </span>
                   </li>
                 ))}
@@ -200,11 +210,19 @@ function TodayCard({ group: g }: { group: Group }) {
               <h2 className="mt-2 text-xl text-muted">No problem yet. Sync problems first.</h2>
             )}
           </div>
-          {g.today_problem && (
-            <Link href={`/g/${g.id}/today`}>
-              <Button className="h-10 px-5">Solve now →</Button>
+          <div className="flex flex-col items-end gap-2">
+            {g.today_problem && (
+              <Link href={`/g/${g.id}/today`}>
+                <Button className="h-10 px-5">Solve now →</Button>
+              </Link>
+            )}
+            <Link
+              href={`/g/${g.id}/history`}
+              className="text-xs text-faint transition-colors hover:text-fg"
+            >
+              Past problems
             </Link>
-          )}
+          </div>
         </div>
       </div>
       <div className="border-t border-line bg-sunken/60 px-6 py-4">
@@ -217,7 +235,7 @@ function TodayCard({ group: g }: { group: Group }) {
           </span>
           <span className="font-mono text-xs text-faint">
             day ends in <span className="text-muted">{untilText(g.day_ends_at, now)}</span>
-            <span className="text-faint"> ({g.timezone.replaceAll("_", " ")})</span>
+            <span className="text-faint"> ({g.timezone_label})</span>
           </span>
         </div>
         <div className="flex gap-1">
@@ -253,7 +271,9 @@ function Members({ group: g, isLeader }: { group: Group; isLeader: boolean }) {
     <Card>
       <CardHeader title="Members" hint={`${g.members.length} in this group`} />
       <ul className="-mx-2">
-        {g.members.map((m) => (
+        {g.members.map((m) => {
+          const status = memberStatus(m);
+          return (
           <li
             key={m.user_id}
             className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-raised"
@@ -269,23 +289,15 @@ function Members({ group: g, isLeader }: { group: Group; isLeader: boolean }) {
                   <span className="truncate">{m.display_name}</span>
                   {m.role === "leader" && <Badge>leader</Badge>}
                 </p>
-                <p className="mt-0.5 text-xs text-faint">
-                  {m.paused
-                    ? "Paused, not counted toward the streak"
-                    : !m.eligible_today
-                      ? "Counts from tomorrow"
-                      : m.solved_today
-                        ? "Solved today"
-                        : "Hasn't solved yet"}
-                </p>
+                <p className="mt-0.5 text-xs text-faint">{status.text}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {m.paused ? (
+              {status.badge === "paused" ? (
                 <Badge tone="warn">paused</Badge>
-              ) : m.solved_today ? (
+              ) : status.badge === "solved" ? (
                 <Badge tone="accent">✓ solved</Badge>
-              ) : m.eligible_today ? (
+              ) : status.badge === "pending" ? (
                 <Badge>pending</Badge>
               ) : null}
               {isLeader && (
@@ -299,7 +311,8 @@ function Members({ group: g, isLeader }: { group: Group; isLeader: boolean }) {
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
       <ErrorText error={pause.error} />
     </Card>
@@ -312,7 +325,7 @@ const RANK_STYLES = [
   "bg-[#e0a37a14] text-[#e0a37a] border-[#e0a37a30]",
 ];
 
-function Leaderboard({ groupId }: { groupId: number }) {
+function Leaderboard({ groupId, timezone }: { groupId: number; timezone: string }) {
   const [period, setPeriod] = useState<"day" | "week">("day");
   const board = useQuery({
     queryKey: ["leaderboard", groupId, period],
@@ -327,6 +340,11 @@ function Leaderboard({ groupId }: { groupId: number }) {
     <Card>
       <CardHeader
         title="Leaderboard"
+        hint={
+          period === "day"
+            ? "Today's solvers, earliest first"
+            : "Days solved this week (Mon–Sun); ties go to earlier solves"
+        }
         action={
           <Segmented
             value={period}
@@ -339,9 +357,13 @@ function Leaderboard({ groupId }: { groupId: number }) {
         }
       />
       {!board.data ? (
-        <Loading />
+        <LeaderboardSkeleton />
       ) : board.data.entries.length === 0 ? (
-        <Empty>No solves yet. First one takes the top spot.</Empty>
+        <Empty>
+          {period === "day"
+            ? "No solves yet today. First one takes the top spot."
+            : "No solves yet this week."}
+        </Empty>
       ) : (
         <ol className="space-y-1.5">
           {board.data.entries.map((e) => (
@@ -363,8 +385,9 @@ function Leaderboard({ groupId }: { groupId: number }) {
               <Avatar name={e.display_name} size="sm" />
               <span className="min-w-0 flex-1 truncate text-sm">{e.display_name}</span>
               <span className="text-right font-mono text-xs text-muted">
-                {period === "week" && <span className="text-fg">{e.solved} · </span>}
-                {duration(e.seconds)}
+                {period === "day" && e.solved_at
+                  ? clockTime(Date.parse(e.solved_at), timezone)
+                  : `${e.solved} ${e.solved === 1 ? "day" : "days"}`}
               </span>
             </li>
           ))}
@@ -472,5 +495,20 @@ function TomorrowPicker({ group: g }: { group: Group }) {
       </form>
       <ErrorText error={set.error} />
     </Card>
+  );
+}
+
+function LeaderboardSkeleton() {
+  return (
+    <ol className="space-y-1.5" aria-label="Loading leaderboard">
+      {[0, 1, 2].map((i) => (
+        <li key={i} className="flex items-center gap-3 px-2 py-2">
+          <Skeleton className="h-6 w-6 rounded-md" />
+          <Skeleton className="h-6 w-6 rounded-full" />
+          <Skeleton className="h-3 flex-1" />
+          <Skeleton className="h-3 w-14" />
+        </li>
+      ))}
+    </ol>
   );
 }

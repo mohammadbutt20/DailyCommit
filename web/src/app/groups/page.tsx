@@ -38,10 +38,9 @@ export default function GroupsPage() {
     enabled: me.isSuccess,
     staleTime: Infinity,
   });
-  // Until the user picks one, suggest the browser's zone (falling back to the server default).
-  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const timezone =
-    tz ?? (zones.data?.zones.includes(browserTz) ? browserTz : zones.data?.default) ?? null;
+  // A short list of friendly names; the group stores the real IANA zone (DST-aware).
+  // Until the user picks one: the server default, Eastern.
+  const timezone = tz ?? zones.data?.default ?? null;
   const create = useMutation({
     mutationFn: () => unwrap(api.POST("/api/groups", { body: { name, timezone } })),
     onSuccess: (g) => router.push(`/g/${g.id}`),
@@ -80,7 +79,7 @@ export default function GroupsPage() {
                     <h2 className="truncate text-base font-semibold tracking-tight">{g.name}</h2>
                     <p className="mt-0.5 text-xs text-muted">
                       {g.member_count} {g.member_count === 1 ? "member" : "members"}
-                      {g.role === "leader" && " · you lead"}
+                      {g.role === "leader" && " · you lead"} · {g.timezone_label}
                     </p>
                   </div>
                   <div className="text-right">
@@ -160,8 +159,8 @@ export default function GroupsPage() {
                 disabled={!zones.data}
               >
                 {zones.data?.zones.map((z) => (
-                  <option key={z} value={z}>
-                    {z.replaceAll("_", " ")}
+                  <option key={z.id} value={z.id}>
+                    {z.label}
                   </option>
                 ))}
               </Select>

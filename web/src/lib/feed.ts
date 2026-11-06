@@ -56,8 +56,3 @@ export function feedText(item: FeedItem): string {
   if (item.kind === "join") return "joined the group";
   return item.problem ? `solved ${item.problem}` : "solved the daily problem";
 }
-
-/** Whether `at` falls on the same local calendar day as `now` (show a time, not a date). */
-export function isSameLocalDay(at: number, now: number): boolean {
-  return new Date(at).toDateString() === new Date(now).toDateString();
-}

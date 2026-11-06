@@ -47,3 +47,16 @@ def test_weekly_tie_on_count_broken_by_total_time():
 def test_empty():
     assert daily([]) == []
     assert weekly([]) == []
+
+
+def test_daily_entries_carry_their_solve_time_earliest_first():
+    entries = daily([solve(1, D1, S1, 90), solve(2, D1, S1, 30)])
+    assert [e.solved_at for e in entries] == [
+        S1 + timedelta(minutes=30),
+        S1 + timedelta(minutes=90),
+    ]
+
+
+def test_weekly_entries_have_no_single_solve_time():
+    entries = weekly([solve(1, D1, S1, 10), solve(1, D2, S2, 20)])
+    assert entries[0].solved == 2 and entries[0].solved_at is None
