@@ -2,7 +2,7 @@ import secrets
 from datetime import date, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dailycommit.api.deps import DB, CurrentUser, RedisDep, require_leader, require_member
 from dailycommit.config import settings
 from dailycommit.domain import timeutil
+from dailycommit.domain.activity import join_id
 from dailycommit.domain.streaks import Member, eligible_members
 from dailycommit.leetcode import client as lc
 from dailycommit.leetcode.importer import ensure_leetcode_problem
@@ -23,6 +24,7 @@ from dailycommit.models import (
     User,
 )
 from dailycommit.schemas import (
+    ActivityOut,
     DailyOverrideIn,
     GroupCreateIn,
     GroupDetail,
@@ -39,6 +41,7 @@ from dailycommit.schemas import (
     TimezonesOut,
 )
 from dailycommit.services import leaderboard
+from dailycommit.services.activity import group_activity
 from dailycommit.services.clock import group_tz, is_valid_timezone, today, valid_timezones
 from dailycommit.services.daily import daily_problem, ensure_daily_problem
 from dailycommit.services.events import group_topic, publish
@@ -141,16 +144,21 @@ async def join_group(body: GroupJoinIn, user: CurrentUser, db: DB, redis: RedisD
         insert(GroupMember)
         .values(group_id=group.id, user_id=user.id, role="member")
         .on_conflict_do_nothing()
-        .returning(GroupMember.user_id)
+        .returning(GroupMember.joined_at)
     )
-    joined = result.scalar() is not None
+    joined_at = result.scalar()
     await db.commit()
-    if joined:
+    if joined_at is not None:
         await publish(
             redis,
             group_topic(group.id),
             "join",
-            {"user_id": user.id, "display_name": user.display_name},
+            {
+                "id": join_id(user.id),  # same id as in GET /groups/{id}/activity
+                "user_id": user.id,
+                "display_name": user.display_name,
+                "at": joined_at.isoformat(),
+            },
         )
     return GroupRef(id=group.id)
 
@@ -228,6 +236,21 @@ async def group_detail(group_id: int, user: CurrentUser, db: DB) -> GroupDetail:
         ],
         recent_days=[StreakDayOut.model_validate(d, from_attributes=True) for d in recent],
     )
+
+
+@router.get("/{group_id}/activity", response_model=list[ActivityOut])
+async def get_activity(
+    group_id: int,
+    user: CurrentUser,
+    db: DB,
+    limit: int = Query(default=20, ge=1, le=50),
+) -> list[ActivityOut]:
+    """The group's most recent solves and joins, newest first (the live feed's history)."""
+    await require_member(db, group_id, user.id)
+    return [
+        ActivityOut.model_validate(a, from_attributes=True)
+        for a in await group_activity(db, group_id, limit)
+    ]
 
 
 @router.patch("/{group_id}/members/{user_id}", status_code=204)

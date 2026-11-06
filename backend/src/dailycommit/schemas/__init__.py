@@ -107,6 +107,18 @@ class StreakDayOut(BaseModel):
     solved_count: int
 
 
+class ActivityOut(BaseModel):
+    """One entry of a group's activity feed. Live `solve`/`join` events on `group:{id}` carry
+    the same `id`, so the browser can merge history and live events without duplicates."""
+
+    id: str
+    kind: Literal["solve", "join"]
+    user_id: int
+    display_name: str
+    at: datetime
+    problem_slug: str | None  # solves only
+
+
 class GroupDetail(BaseModel):
     id: int
     name: str

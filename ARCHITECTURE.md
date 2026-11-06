@@ -97,11 +97,11 @@ backend/                      one Python project (uv), several entrypoints
     db.py                     SQLAlchemy 2 async engine/session (asyncpg)
     models/                   ORM tables
     schemas/                  Pydantic request/response models
-    domain/                   PURE logic, no I/O: streaks, daily_pick, leaderboard, timeutil
-                              (P1: sm2, elo)
+    domain/                   PURE logic, no I/O: streaks, daily_pick, leaderboard, timeutil,
+                              activity (P1: sm2, elo)
     services/                 DB/Redis operations shared by api, worker and scheduler:
                               clock (the day's timezone), daily, solves, rollover, leaderboard,
-                              events, testcases
+                              events, activity, testcases
     api/
       main.py                 FastAPI app
       routers/                auth, groups, problems, submissions, leaderboards
@@ -326,6 +326,7 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 | `PUT /groups/{id}/daily/{day} {problem_id}` | Leader: override a future day's problem |
 | `POST /groups/{id}/invite/rotate` | Leader: new invite code |
 | `GET /groups/{id}/leaderboard?period=day\|week` | Leaderboard |
+| `GET /groups/{id}/activity?limit=20` | Activity feed history: the group's most recent solves and joins from the DB, newest first (`limit` 1–50). Each entry has the same `id` as its live event. |
 | `GET /problems/{slug}` | Statement, samples, starter code per language (only for problems assigned to one of your groups, or any in dev) |
 | `POST /submissions` | Create run/submit (judgeable problems only: local, or LeetCode with a judge pack; otherwise 400) |
 | `GET/PUT/DELETE /me/leetcode`, `POST /me/leetcode/verify` | Link a LeetCode account: PUT `{username}` returns a code; verify once it's in the profile Summary |
@@ -342,8 +343,11 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 // server → client
 { "topic": "submission:42", "event": "test",  "data": { "i": 3, "verdict": "AC", "ms": 12 } }
 { "topic": "submission:42", "event": "final", "data": { "verdict": "WA", "passed": 7, "total": 10 } }
-{ "topic": "group:7",       "event": "solve", "data": { "user_id": 5, "display_name": "…" } }
+{ "topic": "group:7",       "event": "solve", "data": { "id": "solve:2026-11-05:5", "user_id": 5, "display_name": "…", "problem": "two-sum", "at": "…" } }
+{ "topic": "group:7",       "event": "join",  "data": { "id": "join:5", "user_id": 5, "display_name": "…", "at": "…" } }
 ```
+
+**Activity ids** (`domain/activity.py`) name the underlying row, not the message: `solve:{day}:{user_id}` (one solve per group, day and user) and `join:{user_id}` (one membership per group and user). The group page loads `GET /groups/{id}/activity` and puts live events on top, deduplicating by id. An event that arrives both in the history and over the socket (e.g. during page load) shows once, and a refresh keeps the history.
 
 The server checks authorization on subscribe: the submission's owner, or a member of the group. Topic names are the Redis channel names (`submission:{id}`, `group:{id}`; P1: `match:{id}`, `interview:{id}`).
 
@@ -358,7 +362,7 @@ The OpenAPI schema is the contract. `make gen-api` regenerates `web/src/lib/api/
 | `/login` | "Log in with Discord"; in dev, also a seed-user picker |
 | `/groups` | My groups; create; join by code |
 | `/join/[code]` | Invite link landing → join → redirect to group |
-| `/g/[groupId]` | Dashboard: streak, today's problem card, member checklist, daily/weekly leaderboard, activity feed (live via `group:{id}`) |
+| `/g/[groupId]` | Dashboard: streak, today's problem card, member checklist, daily/weekly leaderboard, activity feed (history from `GET /groups/{id}/activity`, then live via `group:{id}`, merged by event id) |
 | `/g/[groupId]/today` | Problem page: statement + samples, Monaco editor, language switcher (code kept per language in localStorage), Run / Submit, live per-test results panel |
 
 Data fetching uses TanStack Query with the generated types. A small `useTopic(topic)` hook wraps the single shared WebSocket connection.
@@ -433,7 +437,8 @@ The dev compose bind-mounts source for hot reload (`uvicorn --reload`, `next dev
 
 | Layer | What |
 |---|---|
-| `domain/` unit tests | Streak evaluation edge cases (late joiner, paused, empty group, missed day), multi-day catch-up, DST transitions in `timeutil`, daily pick rotation, leaderboard ordering. P1: SM-2 and ELO. |
+| `domain/` unit tests | Streak evaluation edge cases (late joiner, paused, empty group, missed day), multi-day catch-up, DST transitions in `timeutil`, daily pick rotation, leaderboard ordering, activity feed merge/dedupe. P1: SM-2 and ELO. |
+| Web unit tests | `node --test` (Node 22 runs TypeScript directly, no extra deps) for pure frontend logic such as `web/src/lib/feed.ts`; part of `make test`. |
 | API tests | pytest + httpx against a disposable Postgres/Redis: auth/session, group join, authorization checks, problem exposure (hidden tests never returned) |
 | Sandbox suite (`-m sandbox`) | Needs Docker. Adversarial programs per language (§5 threats) must yield TLE/MLE/RE and leave no containers behind; AC/WA/CE fixtures per language. |
 | Problem validation | `make validate-problems` / `make sync-problems` run every reference solution (local problems and judge packs) in every provided language in the real sandbox; the sandbox suite also checks every pack's references. Unit tests cover pack loading/validation and the Python references without Docker. |
