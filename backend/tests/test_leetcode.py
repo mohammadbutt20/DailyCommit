@@ -8,7 +8,8 @@ import httpx
 import pytest
 
 from dailycommit.leetcode import client as lc
-from dailycommit.leetcode.importer import content_hash, sanitize
+from dailycommit.leetcode.importer import apply_question, content_hash, sanitize
+from dailycommit.models import Problem
 
 
 def run(handler, fn, *args, **kwargs):
@@ -178,3 +179,21 @@ def test_content_hash_tracks_statement():
     q = lc.Question("a", "1", "A", "easy", ["x"], "<p>1</p>", False)
     changed = lc.Question("a", "1", "A", "easy", ["x"], "<p>2</p>", False)
     assert content_hash(q) == content_hash(q) != content_hash(changed)
+
+
+def test_reimport_keeps_the_judge_pack():
+    row = Problem(slug="two-sum")
+    row.signature = {"function": "twoSum", "params": [], "returns": "int[]"}
+    row.compare, row.limits, row.judge_hash = "unordered", {"time_ms": 2000}, "abc"
+    q = lc.Question("two-sum", "1", "Two Sum", "easy", ["array"], "<p>new</p>", False)
+    apply_question(row, q)
+    assert row.statement_html == "<p>new</p>" and row.source == "leetcode"
+    assert row.signature["function"] == "twoSum"
+    assert (row.compare, row.limits, row.judge_hash) == ("unordered", {"time_ms": 2000}, "abc")
+    assert row.judgeable
+
+
+def test_imported_problem_without_a_pack_is_not_judgeable():
+    row = Problem(slug="lru-cache")
+    apply_question(row, lc.Question("lru-cache", "146", "LRU", "medium", [], "<p>x</p>", False))
+    assert not row.judgeable

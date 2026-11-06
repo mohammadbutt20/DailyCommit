@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dailycommit.domain.daily_pick import Candidate, pick_problem
+from dailycommit.domain.daily_pick import Candidate, daily_pool, pick_problem
 from dailycommit.models import GroupDailyProblem, Problem
 
 
@@ -25,12 +25,19 @@ async def ensure_daily_problem(db: AsyncSession, group_id: int, day: date) -> No
     )
     if exists is not None:
         return
-    # Imported LeetCode problems are the daily pool once there are any; the local problems/
-    # set is the fallback (and stays available for leaders to pick by hand).
-    active = select(Problem).where(Problem.retired.is_(False))
-    problems = (await db.scalars(active.where(Problem.source == "leetcode"))).all()
-    if not problems:
-        problems = (await db.scalars(active)).all()
+    problems = (await db.scalars(select(Problem).where(Problem.retired.is_(False)))).all()
+    pool = daily_pool(
+        [
+            Candidate(
+                p.id,
+                p.slug,
+                tuple(p.topics),
+                source=p.source,
+                judgeable=p.judgeable,
+            )
+            for p in problems
+        ]
+    )
     history = (
         await db.execute(
             select(GroupDailyProblem.day, GroupDailyProblem.problem_id).where(
@@ -39,11 +46,11 @@ async def ensure_daily_problem(db: AsyncSession, group_id: int, day: date) -> No
         )
     ).all()
     choice = pick_problem(
-        [Candidate(p.id, p.slug, tuple(p.topics)) for p in problems],
+        pool,
         [(d, pid) for d, pid in history],
     )
     if choice is None:
-        return  # no problems synced yet; the next rollover tries again
+        return  # nothing judgeable synced yet; the next rollover tries again
     await db.execute(
         insert(GroupDailyProblem)
         .values(group_id=group_id, day=day, problem_id=choice.problem_id)

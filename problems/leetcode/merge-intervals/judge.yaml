@@ -1,0 +1,8 @@
+# Judge pack for https://leetcode.com/problems/merge-intervals/ (statement comes from the import).
+slug: merge-intervals
+function: merge
+params:
+  - { name: intervals, type: "int[][]" }
+returns: "int[][]"
+compare: unordered
+limits: { time_ms: 2000, memory_mb: 256 }

@@ -44,7 +44,8 @@ def apply_question(row: Problem, q: Question) -> None:
     row.topics = [t[:40] for t in q.topics]
     row.statement_md = ""
     row.statement_html = sanitize(q.content_html or "")
-    row.signature = row.compare = row.limits = None
+    # signature/compare/limits/judge_hash belong to the judge pack (problems sync), not to
+    # LeetCode's data, so a re-import keeps a problem judgeable.
     row.content_hash = content_hash(q)
     row.retired = False
 

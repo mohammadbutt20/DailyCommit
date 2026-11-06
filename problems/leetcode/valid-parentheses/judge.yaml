@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/valid-parentheses/ (statement comes from the import).
+slug: valid-parentheses
+function: isValid
+params:
+  - { name: s, type: string }
+returns: bool
+limits: { time_ms: 2000, memory_mb: 256 }

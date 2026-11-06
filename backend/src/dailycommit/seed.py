@@ -36,8 +36,11 @@ async def seed() -> None:
         if await db.scalar(select(Group.id).where(Group.invite_code == INVITE)):
             print("demo group already exists; nothing to do")
             return
-        if not await db.scalar(select(Problem.id).where(Problem.retired.is_(False))):
-            raise SystemExit("no problems in the database; run `make sync-problems` first")
+        judgeable = select(Problem.id).where(
+            Problem.retired.is_(False), Problem.signature.is_not(None)
+        )
+        if not await db.scalar(judgeable.limit(1)):
+            raise SystemExit("no judgeable problems in the database; run `make sync-problems`")
 
         now = utcnow()
         tz_name = settings.day_timezone

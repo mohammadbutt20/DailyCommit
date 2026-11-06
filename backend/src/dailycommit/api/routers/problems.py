@@ -26,7 +26,7 @@ async def get_problem(slug: str, user: CurrentUser, db: DB) -> ProblemDetail:
     problem = await db.scalar(select(Problem).where(Problem.slug == slug))
     if problem is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Problem not found")
-    if problem.source == "leetcode" or problem.signature is None:
+    if not problem.judgeable:
         return ProblemDetail(
             **ProblemSummary.model_validate(problem, from_attributes=True).model_dump(),
             statement_md=problem.statement_md,
@@ -48,12 +48,13 @@ async def get_problem(slug: str, user: CurrentUser, db: DB) -> ProblemDetail:
             .order_by(TestCase.ordinal)
         )
     ).all()
+    assert problem.signature is not None
     sig = Signature(**problem.signature)
     assert problem.limits is not None
     return ProblemDetail(
         **ProblemSummary.model_validate(problem, from_attributes=True).model_dump(),
         statement_md=problem.statement_md,
-        statement_html=None,
+        statement_html=problem.statement_html,  # LeetCode problems with a judge pack
         function=sig.function,
         params=[ParamOut(name=p.name, type=p.type) for p in sig.params],
         returns=sig.returns,

@@ -10,6 +10,19 @@ class Candidate:
     problem_id: int
     slug: str
     topics: tuple[str, ...]
+    source: str = "local"  # local | leetcode
+    judgeable: bool = True  # has a signature and tests, so our sandbox can judge it
+
+
+def daily_pool(candidates: Sequence[Candidate]) -> list[Candidate]:
+    """The problems auto-pick may choose from: only ones we can judge here, and imported
+    LeetCode problems (with a judge pack) ahead of local ones, which are the fallback.
+
+    A problem without a judge pack is never auto-picked; a leader can still assign one by hand.
+    """
+    judgeable = [c for c in candidates if c.judgeable]
+    leetcode = [c for c in judgeable if c.source == "leetcode"]
+    return leetcode or judgeable
 
 
 def pick_problem(

@@ -592,6 +592,11 @@ export interface components {
             source_url?: string | null;
             /** Frontend Id */
             frontend_id?: string | null;
+            /**
+             * Judgeable
+             * @default false
+             */
+            judgeable: boolean;
             /** Statement Md */
             statement_md: string;
             /** Statement Html */
@@ -635,6 +640,11 @@ export interface components {
             source_url?: string | null;
             /** Frontend Id */
             frontend_id?: string | null;
+            /**
+             * Judgeable
+             * @default false
+             */
+            judgeable: boolean;
         };
         /** SampleOut */
         SampleOut: {

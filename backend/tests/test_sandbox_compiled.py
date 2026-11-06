@@ -6,7 +6,8 @@ import time
 
 import pytest
 
-from dailycommit.problems.loader import load_all
+from dailycommit.problems.__main__ import verify
+from dailycommit.problems.loader import load_all, load_judge_packs
 from dailycommit.problems.schema import Signature
 from dailycommit.sandbox.backend import DockerSandbox
 from dailycommit.sandbox.languages import LANGUAGES
@@ -174,15 +175,20 @@ def test_cpp_segfault_is_named(sandbox):
 @pytest.mark.parametrize("lang", COMPILED)
 def test_starter_code_compiles_for_every_problem(sandbox, lang):
     language = LANGUAGES[lang]
-    for p in load_all(PROBLEMS_DIR):
+    for p in [*load_all(PROBLEMS_DIR), *load_judge_packs(PROBLEMS_DIR)]:
         tests = [TestInput(t.input, t.expected, t.sample) for t in p.tests]
         report = run_tests(
             sandbox,
             language,
-            language.starter_code(p.spec.signature),
-            p.spec.signature,
+            language.starter_code(p.signature),
+            p.signature,
             tests,
             p.compare,
-            p.spec.limits.model_dump(),
+            p.limits.model_dump(),
         )
-        assert report.verdict in {"WA", "AC"}, (p.spec.slug, report.verdict, report.error)
+        assert report.verdict in {"WA", "AC"}, (p.slug, report.verdict, report.error)
+
+
+def test_judge_pack_references_pass_in_every_language(sandbox):
+    """What `sync-problems` requires before a judge pack loads, in the real sandbox."""
+    assert verify(load_judge_packs(PROBLEMS_DIR), sandbox) == []

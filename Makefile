@@ -8,7 +8,7 @@ EXEC := $(COMPOSE) exec -T
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-18s %s\n", $$1, $$2}'
 
-demo: sandbox-images up migrate sync-problems import-leetcode seed ## First run: build everything, load problems and demo data
+demo: sandbox-images up migrate import-leetcode sync-problems seed ## First run: build everything, load problems and demo data
 	@echo "Open http://localhost:8080 and log in as Bob, Chen or Dana."
 
 up: ## Start the stack (rebuilds images when Dockerfiles or dependencies change)
@@ -37,7 +37,7 @@ migrate: ## Apply database migrations
 validate-problems: ## Check problems/ and run reference solutions in the sandbox (no DB writes)
 	$(EXEC) worker python -m dailycommit.problems validate
 
-sync-problems: ## Validate problems/ and load them into the database
+sync-problems: ## Validate problems/ (+ judge packs) and load them into the database
 	$(EXEC) worker python -m dailycommit.problems sync
 
 # Default: LeetCode's Top Interview 150. Others: make import-leetcode LC="--plan leetcode-75"

@@ -35,6 +35,9 @@ class ProblemSummary(BaseModel):
     source: Literal["local", "leetcode"] = "local"
     source_url: str | None = None  # leetcode.com problem page (LeetCode problems)
     frontend_id: str | None = None  # LeetCode's problem number
+    # Submittable to our judge: every local problem, and LeetCode problems with a judge pack.
+    # LeetCode problems without one are solved on leetcode.com.
+    judgeable: bool = False
 
 
 class LeetCodeAccountOut(BaseModel):
@@ -166,7 +169,7 @@ class SampleOut(BaseModel):
 class ProblemDetail(ProblemSummary):
     statement_md: str
     statement_html: str | None  # LeetCode problems: sanitized HTML, safe to render as-is
-    # Judge fields: local problems only (null/empty for LeetCode, which is solved on leetcode.com).
+    # Judge fields: set when `judgeable` (null/empty otherwise).
     function: str | None
     params: list[ParamOut]
     returns: str | None

@@ -2,7 +2,7 @@
 
 Daily Commit: a group coding-practice platform. Members solve a shared daily problem (Python/Java/C++) in a browser editor with sandboxed execution, keep a group streak alive, and compete on leaderboards. Current focus: the **P0 midpoint demo**, built as scaffolding for P1 (VS mode/ELO, SM-2, mock interviews, peer review, analytics, Discord bot).
 
-**Current state:** P0 slices 0, 2 and 3 are built: Python only, Discord OAuth + dev login, per-group timezones. Next slices (Java/C++, VPS, load test) are listed in ARCHITECTURE.md §15; build each as its own change.
+**Current state:** P0 slices 0–3 and 6 are built: Python/Java/C++ sandbox, Discord OAuth + dev login, per-group timezones, LeetCode import with judge packs (imported problems solved and graded here). Next slices (VPS, load test) are listed in ARCHITECTURE.md §15; build each as its own change.
 
 **Read [ARCHITECTURE.md](ARCHITECTURE.md) before making structural changes.** It records every settled decision and why. If a change contradicts it, update ARCHITECTURE.md in the same change, or raise it with the user first.
 
@@ -18,7 +18,8 @@ Next.js (App Router) + TypeScript + Tailwind + Monaco + TanStack Query · FastAP
   - `problems/`: CLI that validates and syncs `problems/` into the DB.
   - `leetcode/`: LeetCode GraphQL client (the only code that talks to LeetCode) and the import CLI.
 - `sandbox/images/`: per-language sandbox Dockerfiles.
-- `problems/<slug>/`: `problem.yaml`, `statement.md`, `tests.json`, `solutions/ref.*`.
+- `problems/<slug>/`: local (original) problems: `problem.yaml`, `statement.md`, `tests.json`, `solutions/ref.*`.
+- `problems/leetcode/<slug>/`: judge packs for imported LeetCode problems: `judge.yaml`, `tests.json`, `solutions/ref.{py,java,cpp}`. No statement (it comes from the import).
 - `infra/`: `compose.yaml` (dev), `compose.prod.yaml`, `Caddyfile`.
 - `docs/`: PRD and system map (historical; ARCHITECTURE.md supersedes them where they differ).
 
@@ -57,6 +58,6 @@ Backend unit tests also run without Docker: `cd backend && uv sync && uv run pyt
 ## Conventions
 - **Python:** uv for deps, ruff for lint/format, type hints everywhere, async SQLAlchemy sessions via FastAPI dependencies, Pydantic models in `schemas/` (don't return ORM objects), settings only via `config.py`.
 - **TypeScript:** `strict` mode, use the generated API types (no hand-written duplicates), server state through TanStack Query, live updates through the shared `useTopic` WebSocket hook.
-- **Problems:** the daily pool is LeetCode problems imported with `make import-leetcode` and solved on leetcode.com (ARCHITECTURE.md §6). Local `problems/` are for original content: each ships a reference solution and hand-written edge-case tests.
+- **Problems:** the daily pool is LeetCode problems imported with `make import-leetcode` that have a **judge pack** in `problems/leetcode/<slug>/`; members solve them in our editor and our sandbox grades them (ARCHITECTURE.md §6). Only judgeable problems are auto-picked. Never commit LeetCode statements (public repo); pack samples are LeetCode's examples, hidden tests are our own edge cases. Every pack ships `ref.py`, `ref.java` and `ref.cpp`, and they must all pass `make validate-problems`. Local `problems/` are for original content: each ships a reference solution and hand-written edge-case tests.
 - **Scope:** finish P0 end to end before starting P1. P1 features plug in at the extension points in ARCHITECTURE.md §11.
 - Keep the README's demo script up to date when the setup or demo flow changes.
