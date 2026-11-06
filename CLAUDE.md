@@ -53,7 +53,7 @@ Backend unit tests also run without Docker: `cd backend && uv sync && uv run pyt
 6. **Schema changes only via Alembic migrations.**
 7. **After changing API routes or schemas, run `make gen-api`** and fix the TypeScript errors it surfaces.
 8. **Dev login exists only when `ENV=dev`.** The route must not be registered otherwise.
-9. Only `submit` (not `run`) submissions with verdict `AC` count toward streaks and leaderboards.
+9. Only `submit` (not `run` or `practice`) submissions with verdict `AC` count toward streaks and leaderboards. `practice` (past problems) is judged on every test but never credited.
 
 ## Conventions
 - **Python:** uv for deps, ruff for lint/format, type hints everywhere, async SQLAlchemy sessions via FastAPI dependencies, Pydantic models in `schemas/` (don't return ORM objects), settings only via `config.py`.

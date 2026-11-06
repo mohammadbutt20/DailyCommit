@@ -47,11 +47,21 @@ export default function Header() {
             >
               Groups
             </Link>
+            <Link
+              href="/me"
+              className="hidden rounded-md px-3 py-1.5 text-sm text-muted transition-colors hover:bg-raised hover:text-fg sm:block"
+            >
+              My history
+            </Link>
             <div className="mx-2 hidden h-5 w-px bg-line sm:block" />
-            <div className="flex items-center gap-2 pr-1">
+            <Link
+              href="/me"
+              title="My history and stats"
+              className="flex items-center gap-2 rounded-md px-1.5 py-1 pr-2 transition-colors hover:bg-raised"
+            >
               <Avatar name={me.data.user.display_name} src={me.data.user.avatar_url} size="sm" />
               <span className="text-sm text-fg">{me.data.user.display_name}</span>
-            </div>
+            </Link>
             <button
               onClick={logout}
               className="rounded-md px-3 py-1.5 text-sm text-muted transition-colors hover:bg-raised hover:text-fg"

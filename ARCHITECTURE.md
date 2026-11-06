@@ -66,7 +66,7 @@ flowchart TB
 | Problem I/O (judged problems) | LeetCode-style function signatures, JSON test data, generated harness per language. Same format for local problems and judge packs. | Feels like real interview prep. A typed signature drives starter code and harness generation for all three languages. |
 | Queue + jobs | `arq` (async, Redis-backed) for both the execution queue and cron | Same async model as FastAPI, little code. Workers and scheduler run as separate processes. |
 | Worker language | Python | One backend language with shared models and DB code. Container start and compile time dominate latency, not the worker. Closes the PRD's "Go instead?" question. |
-| Day boundary | Per-group IANA timezone, chosen at creation (default `DAY_TIMEZONE`, `America/New_York`) and fixed after that, since changing it would shift already-evaluated days. The day rolls at local midnight. | Works for any group, anywhere. Rollover is also the streak-evaluation moment and (P1) the solution-unlock moment. |
+| Day boundary | Per-group IANA timezone, chosen at creation (default `DAY_TIMEZONE`, `America/New_York`) and fixed after that, since changing it would shift already-evaluated days. The day rolls at local midnight. The create form offers a short list of friendly names (Eastern (ET), Central (CT), Mountain (MT), Arizona, Pacific (PT), Alaska, Hawaii; `services/clock.FRIENDLY_ZONES`) but stores the real IANA zone, so daylight saving follows the zone. Groups show `timezone_label`: the friendly name, or the city for any other zone. Times on a group's pages (feed, leaderboard) are shown in the group's zone. | Works for any group, anywhere. Rollover is also the streak-evaluation moment and (P1) the solution-unlock moment. |
 | Streak rule | Eligible members = joined before the day started **and** not `paused`. Streak +1 if every eligible member solved, else reset to 0. No eligible members → unchanged. | Faithful to "everyone keeps it alive," but a late joiner or an inactive member a leader paused can't kill it. |
 | Groups | A user can be in many groups. Each group has its own daily problem. | Pledge class + clubs. One accepted solve counts for every group of that user whose today-problem matches. |
 | Daily pick | Auto: least-recently-used problem for that group, rotating topics. A leader can override tomorrow's pick. | Zero maintenance by default, control when wanted. |
@@ -98,10 +98,11 @@ backend/                      one Python project (uv), several entrypoints
     models/                   ORM tables
     schemas/                  Pydantic request/response models
     domain/                   PURE logic, no I/O: streaks, daily_pick, leaderboard, timeutil,
-                              activity (P1: sm2, elo)
+                              activity, stats (P1: sm2, elo)
     services/                 DB/Redis operations shared by api, worker and scheduler:
                               clock (the day's timezone), daily, solves, rollover, leaderboard,
-                              events, activity, testcases
+                              events, activity, history (past problems, my submissions/stats),
+                              submissions, testcases
     api/
       main.py                 FastAPI app
       routers/                auth, groups, problems, submissions, leaderboards
@@ -283,7 +284,7 @@ P0 tables. All timestamps are `timestamptz` in UTC; `day` columns are the group-
 | `problems` | id, slug (unique), title, difficulty, topics (text[]), source (`local` / `leetcode`), source_url, frontend_id, statement_md, statement_html (LeetCode, sanitized), signature (jsonb), compare (jsonb), limits (jsonb), content_hash, judge_hash (LeetCode judge pack), retired. Judge fields are NULL when not judgeable here. |
 | `test_cases` | id, problem_id, ordinal, is_sample, input (jsonb), expected (jsonb) |
 | `group_daily_problems` | group_id, day, problem_id, assigned_by (`auto` / user_id); unique(group_id, day) |
-| `submissions` | id, user_id, problem_id, language, kind (`run` / `submit`), code, status (`queued` / `running` / `done`), verdict, passed, total, runtime_ms, created_at, finished_at |
+| `submissions` | id, user_id, problem_id, group_id (the group it was made from; NULL for old rows, migration 0005), language, kind (`run` = samples only / `submit` = every test, can credit today / `practice` = every test, never credited), code, status (`queued` / `running` / `done`), verdict, passed, total, runtime_ms, created_at, finished_at |
 | `submission_results` | submission_id, ordinal, verdict, time_ms, stdout_excerpt, actual (sample tests only) |
 | `group_day_solves` | group_id, day, user_id, submission_id, solved_at; unique(group_id, day, user_id) |
 | `group_streak_days` | group_id, day, eligible_count, solved_count, kept; unique(group_id, day) |
@@ -315,8 +316,8 @@ Creating a group assigns today's problem immediately. A leader override for tomo
 **"Solved today"** means an `AC` `submit` (or, for LeetCode problems, an Accepted LeetCode submission) whose time, converted to the group's timezone, falls on that group's day *d*, for that day's problem, and *d* hasn't been evaluated yet. All local-day math goes through `domain/timeutil.py` (zoneinfo), which is unit-tested for DST transitions.
 
 **Leaderboards** (`domain.leaderboard`):
-- **Daily:** today's solvers, ordered by `solved_at`.
-- **Weekly** (Mon–Sun, group-local): number of daily problems solved, tie-broken by total solve time after each day's start.
+- **Daily:** today's solvers, earliest `solved_at` first; the page shows each solve time ("3:14 PM") in the group's timezone.
+- **Weekly** (Mon–Sun, group-local): number of daily problems solved ("5 days"), tie-broken by total solve time after each day's start (whoever solved earlier in their days). The page says so in the card's hint.
 
 Leaderboards are cached in Redis under `lb:{group}:{period}:{day}` (5-minute TTL) and invalidated on each solve. Nothing else is cached; today's problem is read from Postgres.
 
@@ -339,7 +340,7 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 | `POST /auth/logout` | Delete session |
 | `GET /me` | Current user + groups |
 | `POST /groups {name, timezone?}` | Create group (creator = leader); unknown IANA zone → 422 |
-| `GET /groups/timezones` | Valid IANA zones + the default for new groups |
+| `GET /groups/timezones` | The friendly zones offered for a new group (`{id: IANA zone, label}`) + the default (Eastern). Creating a group still accepts any valid IANA zone. |
 | `POST /groups/join {invite_code}` | Join |
 | `GET /groups` | My groups |
 | `GET /groups/{id}` | Dashboard: today's problem, streak, members with solved-today status |
@@ -347,12 +348,16 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 | `PUT /groups/{id}/daily/{day} {problem_id}` | Leader: override a future day's problem |
 | `POST /groups/{id}/invite/rotate` | Leader: new invite code |
 | `GET /groups/{id}/leaderboard?period=day\|week` | Leaderboard |
+| `GET /groups/{id}/history` | Past problems: every assigned day up to today, newest first, with the problem, whether you solved it, and solved/member counts (the day's eligible count once evaluated). Future days (a leader's pick for tomorrow) are never listed. Members only. |
+| `GET /groups/{id}/history/{day}` | One of those days (404 for future days or days without a problem), for the practice page |
 | `GET /groups/{id}/activity?limit=20` | Activity feed history: the group's most recent solves and joins from the DB, newest first (`limit` 1–50). Each entry has the same `id` as its live event. |
 | `GET /problems/{slug}` | Statement, samples, starter code per language (only for problems assigned to one of your groups, or any in dev) |
-| `POST /submissions` | Create run/submit (judgeable problems only: local, or LeetCode with a judge pack; otherwise 400) |
+| `POST /submissions` | Create a `run` / `submit` / `practice` (judgeable problems only: local, or LeetCode with a judge pack; otherwise 400). Optional `group_id`: the group it's made from; you must be a member (404 otherwise). Only a `submit` can credit a streak. |
 | `GET/PUT/DELETE /me/leetcode`, `POST /me/leetcode/verify` | Link a LeetCode account: PUT `{username}` returns a code; verify once it's in the profile Summary |
 | `POST /me/leetcode/check` | Credit today's LeetCode accepts now (15 s cooldown) |
-| `GET /submissions/{id}` | Status, verdict, per-test results (owner only in P0) |
+| `GET /submissions/{id}` | Status, verdict, per-test results, the submitted code, problem title and group. Owner only: anyone else's is 404. |
+| `GET /me/submissions?limit=&before_id=` | Your own submissions, newest first, paged by id (`next_before_id`). Scoped to the caller; there's no way to list someone else's. |
+| `GET /me/stats` | Problems solved (distinct, AC submit or practice), Accepted rate (AC ÷ judged submit+practice, excluding samples-only runs and IE), streak per group, solves by language and difficulty (`domain/stats.py`) |
 | `GET /health` | Liveness for compose/Caddy |
 
 **WebSocket `/ws`** (cookie-authenticated on the handshake):
@@ -384,6 +389,10 @@ The OpenAPI schema is the contract. `make gen-api` regenerates `web/src/lib/api/
 | `/groups` | My groups; create; join by code |
 | `/join/[code]` | Invite link landing → join → redirect to group |
 | `/g/[groupId]` | Dashboard: streak, today's problem card, member checklist, daily/weekly leaderboard, activity feed (history from `GET /groups/{id}/activity`, then live via `group:{id}`, merged by event id) |
+| `/g/[groupId]/history` | Past problems: date, title, difficulty, tags, "✓ you", and how many members solved each day |
+| `/g/[groupId]/history/[day]` | A past problem in the same Monaco workspace, in practice mode: Submit sends `kind: "practice"`, which never changes a streak or a day's results |
+| `/me` | My history and stats: stats cards, then my submissions (newest first, "Load more"); linked from the header |
+| `/me/submissions/[id]` | One of my submissions: the code (read-only Monaco), verdict and per-test results |
 | `/g/[groupId]/today` | Problem page: statement + samples, Monaco editor, language switcher (code kept per language in localStorage), Run / Submit, live per-test results panel |
 
 Data fetching uses TanStack Query with the generated types. A small `useTopic(topic)` hook wraps the single shared WebSocket connection.

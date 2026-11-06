@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from dailycommit.sandbox.backend import RunOutcome, RunRequest
+from tests.pg import db, test_db_url  # noqa: F401  (shared Postgres fixtures)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROBLEMS_DIR = Path(os.environ.get("PROBLEMS_DIR", REPO_ROOT / "problems"))

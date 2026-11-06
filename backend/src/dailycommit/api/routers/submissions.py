@@ -2,11 +2,11 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dailycommit.api.deps import DB, ArqDep, CurrentUser, RedisDep
+from dailycommit.api.deps import DB, ArqDep, CurrentUser, RedisDep, require_member
 from dailycommit.config import settings
-from dailycommit.models import Problem, Submission, SubmissionResult
+from dailycommit.models import Group, Problem, Submission, SubmissionResult
 from dailycommit.sandbox.languages import LANGUAGES
-from dailycommit.schemas import SubmissionIn, SubmissionOut, SubmissionResultOut
+from dailycommit.schemas import GroupRefOut, SubmissionIn, SubmissionOut, SubmissionResultOut
 from dailycommit.services.testcases import tests_for_run
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -29,6 +29,8 @@ async def create_submission(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "This problem can't be judged here; solve it on LeetCode"
         )
+    if body.group_id is not None:
+        await require_member(db, body.group_id, user.id)  # 404 for groups you're not in
 
     rate_key = f"rl:submit:{user.id}"
     count = await redis.incr(rate_key)
@@ -43,6 +45,7 @@ async def create_submission(
         language=body.language,
         kind=body.kind,
         code=body.code,
+        group_id=body.group_id,
     )
     db.add(sub)
     await db.commit()
@@ -86,9 +89,13 @@ async def _submission_out(db: AsyncSession, sub: Submission, problem: Problem) -
                 error=r.error,
             )
         )
+    group = await db.get(Group, sub.group_id) if sub.group_id is not None else None
     return SubmissionOut(
         id=sub.id,
         problem_slug=problem.slug,
+        problem_title=problem.title,
+        group=GroupRefOut(id=group.id, name=group.name) if group else None,
+        code=sub.code,
         language=sub.language,
         kind=sub.kind,
         status=sub.status,

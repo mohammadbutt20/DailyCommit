@@ -84,7 +84,7 @@ export interface paths {
         };
         /**
          * List Timezones
-         * @description IANA zones a group can use, plus the server default for new groups.
+         * @description The zones offered for a new group (friendly names, real IANA ids), and the default.
          */
         get: operations["list_timezones_api_groups_timezones_get"];
         put?: never;
@@ -159,6 +159,46 @@ export interface paths {
          * @description The group's most recent solves and joins, newest first (the live feed's history).
          */
         get: operations["get_activity_api_groups__group_id__activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get History
+         * @description Every daily problem up to today, newest first: whether you solved it, how many did.
+         */
+        get: operations["get_history_api_groups__group_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/history/{day}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get History Day
+         * @description One past (or today's) problem, for practicing it. Future days are never shown.
+         */
+        get: operations["get_history_day_api_groups__group_id__history__day__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -292,6 +332,43 @@ export interface paths {
          *     scheduler (which checks every few minutes anyway).
          */
         post: operations["check_now_api_me_leetcode_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Submissions
+         * @description Your submissions, newest first. Pass `next_before_id` back as `before_id` for older ones.
+         */
+        get: operations["list_my_submissions_api_me_submissions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get My Stats */
+        get: operations["get_my_stats_api_me_stats_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -463,6 +540,8 @@ export interface components {
             invite_code: string;
             /** Timezone */
             timezone: string;
+            /** Timezone Label */
+            timezone_label: string;
             /** My Role */
             my_role: string;
             /** Current Streak */
@@ -496,12 +575,34 @@ export interface components {
             /** Id */
             id: number;
         };
+        /** GroupRefOut */
+        GroupRefOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+        };
+        /** GroupStreakOut */
+        GroupStreakOut: {
+            /** Group Id */
+            group_id: number;
+            /** Group Name */
+            group_name: string;
+            /** Current Streak */
+            current_streak: number;
+            /** Best Streak */
+            best_streak: number;
+        };
         /** GroupSummary */
         GroupSummary: {
             /** Id */
             id: number;
             /** Name */
             name: string;
+            /** Timezone */
+            timezone: string;
+            /** Timezone Label */
+            timezone_label: string;
             /** Role */
             role: string;
             /** Member Count */
@@ -518,6 +619,28 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HistoryDayOut
+         * @description One day of a group's past problems.
+         */
+        HistoryDayOut: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Is Today */
+            is_today: boolean;
+            problem: components["schemas"]["ProblemSummary"];
+            /** Solved By Me */
+            solved_by_me: boolean;
+            /** Solved Count */
+            solved_count: number;
+            /** Member Count */
+            member_count: number;
+            /** Kept */
+            kept: boolean | null;
         };
         /** InviteOut */
         InviteOut: {
@@ -545,6 +668,8 @@ export interface components {
             solved: number;
             /** Seconds */
             seconds: number;
+            /** Solved At */
+            solved_at?: string | null;
         };
         /** LeaderboardOut */
         LeaderboardOut: {
@@ -609,6 +734,44 @@ export interface components {
         MemberUpdateIn: {
             /** Paused */
             paused: boolean;
+        };
+        /** MySubmissionOut */
+        MySubmissionOut: {
+            /** Id */
+            id: number;
+            /** Problem Slug */
+            problem_slug: string;
+            /** Problem Title */
+            problem_title: string;
+            /** Difficulty */
+            difficulty: string;
+            group: components["schemas"]["GroupRefOut"] | null;
+            /** Language */
+            language: string;
+            /** Kind */
+            kind: string;
+            /** Status */
+            status: string;
+            /** Verdict */
+            verdict: string | null;
+            /** Passed */
+            passed: number;
+            /** Total */
+            total: number;
+            /** Runtime Ms */
+            runtime_ms: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** MySubmissionsOut */
+        MySubmissionsOut: {
+            /** Items */
+            items: components["schemas"]["MySubmissionOut"][];
+            /** Next Before Id */
+            next_before_id: number | null;
         };
         /** ParamOut */
         ParamOut: {
@@ -700,6 +863,27 @@ export interface components {
             /** Expected */
             expected: unknown;
         };
+        /** StatsOut */
+        StatsOut: {
+            /** Problems Solved */
+            problems_solved: number;
+            /** Submissions */
+            submissions: number;
+            /** Accepted */
+            accepted: number;
+            /** Accepted Rate */
+            accepted_rate: number | null;
+            /** By Language */
+            by_language: {
+                [key: string]: number;
+            };
+            /** By Difficulty */
+            by_difficulty: {
+                [key: string]: number;
+            };
+            /** Streaks */
+            streaks: components["schemas"]["GroupStreakOut"][];
+        };
         /** StreakDayOut */
         StreakDayOut: {
             /**
@@ -724,9 +908,11 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "run" | "submit";
+            kind: "run" | "submit" | "practice";
             /** Code */
             code: string;
+            /** Group Id */
+            group_id?: number | null;
         };
         /** SubmissionOut */
         SubmissionOut: {
@@ -734,6 +920,11 @@ export interface components {
             id: number;
             /** Problem Slug */
             problem_slug: string;
+            /** Problem Title */
+            problem_title: string;
+            group: components["schemas"]["GroupRefOut"] | null;
+            /** Code */
+            code: string;
             /** Language */
             language: string;
             /** Kind */
@@ -783,12 +974,19 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** TimezoneOption */
+        TimezoneOption: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
         /** TimezonesOut */
         TimezonesOut: {
             /** Default */
             default: string;
             /** Zones */
-            zones: string[];
+            zones: components["schemas"]["TimezoneOption"][];
         };
         /** UserOut */
         UserOut: {
@@ -1071,6 +1269,69 @@ export interface operations {
             };
         };
     };
+    get_history_api_groups__group_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryDayOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_history_day_api_groups__group_id__history__day__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: number;
+                day: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryDayOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_member_api_groups__group_id__members__user_id__patch: {
         parameters: {
             query?: never;
@@ -1310,6 +1571,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LeetCodeCheckOut"];
+                };
+            };
+        };
+    };
+    list_my_submissions_api_me_submissions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                before_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MySubmissionsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_stats_api_me_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsOut"];
                 };
             };
         };
