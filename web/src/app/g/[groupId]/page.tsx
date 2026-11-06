@@ -15,9 +15,11 @@ import {
   Empty,
   ErrorText,
   Eyebrow,
+  Input,
   Loading,
   Segmented,
   Select,
+  Spinner,
   cx,
 } from "@/components/ui";
 import { api, type Schemas, unwrap } from "@/lib/api/client";
@@ -200,6 +202,7 @@ function TodayCard({ group: g }: { group: Group }) {
           </span>
           <span className="font-mono text-xs text-faint">
             day ends in <span className="text-muted">{untilText(g.day_ends_at, now)}</span>
+            <span className="text-faint"> ({g.timezone.replaceAll("_", " ")})</span>
           </span>
         </div>
         <div className="flex gap-1">
@@ -241,7 +244,11 @@ function Members({ group: g, isLeader }: { group: Group; isLeader: boolean }) {
             className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-raised"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <Avatar name={m.display_name} ring={m.solved_today ? "accent" : "none"} />
+              <Avatar
+                name={m.display_name}
+                src={m.avatar_url}
+                ring={m.solved_today ? "accent" : "none"}
+              />
               <div className="min-w-0">
                 <p className="flex items-center gap-2 text-sm font-medium">
                   <span className="truncate">{m.display_name}</span>
@@ -402,6 +409,7 @@ function TomorrowPicker({ group: g }: { group: Group }) {
     queryFn: () => unwrap(api.GET("/api/problems")),
   });
   const tomorrow = nextDay(g.today);
+  const [link, setLink] = useState("");
   const set = useMutation({
     mutationFn: (slug: string) =>
       unwrap(
@@ -426,10 +434,27 @@ function TomorrowPicker({ group: g }: { group: Group }) {
         <option value="">{g.tomorrow_problem ? "Change problem…" : "Choose a problem…"}</option>
         {problems.data?.map((p) => (
           <option key={p.slug} value={p.slug}>
+            {p.frontend_id ? `${p.frontend_id}. ` : ""}
             {p.title} ({p.difficulty})
           </option>
         ))}
       </Select>
+      <form
+        className="mt-2 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (link.trim()) set.mutate(link.trim(), { onSuccess: () => setLink("") });
+        }}
+      >
+        <Input
+          placeholder="…or paste any LeetCode problem link"
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+        />
+        <Button type="submit" variant="secondary" disabled={!link.trim() || set.isPending}>
+          {set.isPending ? <Spinner /> : "Set"}
+        </Button>
+      </form>
       <ErrorText error={set.error} />
     </Card>
   );

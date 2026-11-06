@@ -26,6 +26,20 @@ async def get_problem(slug: str, user: CurrentUser, db: DB) -> ProblemDetail:
     problem = await db.scalar(select(Problem).where(Problem.slug == slug))
     if problem is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Problem not found")
+    if not problem.judgeable:
+        return ProblemDetail(
+            **ProblemSummary.model_validate(problem, from_attributes=True).model_dump(),
+            statement_md=problem.statement_md,
+            statement_html=problem.statement_html,
+            function=None,
+            params=[],
+            returns=None,
+            time_limit_ms=None,
+            memory_limit_mb=None,
+            samples=[],
+            languages=[],
+            starter_code={},
+        )
     # Only sample tests ever leave the backend.
     samples = (
         await db.scalars(
@@ -34,13 +48,13 @@ async def get_problem(slug: str, user: CurrentUser, db: DB) -> ProblemDetail:
             .order_by(TestCase.ordinal)
         )
     ).all()
+    assert problem.signature is not None
     sig = Signature(**problem.signature)
+    assert problem.limits is not None
     return ProblemDetail(
-        slug=problem.slug,
-        title=problem.title,
-        difficulty=problem.difficulty,
-        topics=problem.topics,
+        **ProblemSummary.model_validate(problem, from_attributes=True).model_dump(),
         statement_md=problem.statement_md,
+        statement_html=problem.statement_html,  # LeetCode problems with a judge pack
         function=sig.function,
         params=[ParamOut(name=p.name, type=p.type) for p in sig.params],
         returns=sig.returns,

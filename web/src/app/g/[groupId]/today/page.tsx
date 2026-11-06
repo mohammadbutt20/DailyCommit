@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { LeetCodeProblem } from "@/components/LeetCodeProblem";
 import {
   Badge,
   Button,
@@ -27,7 +28,7 @@ type Problem = Schemas["ProblemDetail"];
 
 export default function TodayPage() {
   const groupId = Number(useParams<{ groupId: string }>().groupId);
-  useRequireMe();
+  const me = useRequireMe();
   const group = useGroup(groupId);
   const slug = group.data?.today_problem?.slug;
   const problem = useQuery({
@@ -49,10 +50,16 @@ export default function TodayPage() {
         </Link>
         <Eyebrow>Today · {group.data?.today}</Eyebrow>
       </div>
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <Statement problem={problem.data} />
-        <Workspace problem={problem.data} groupId={groupId} />
-      </div>
+      {/* LeetCode problems without a judge pack are solved on leetcode.com; everything
+          judgeable (local, or LeetCode with a pack) is solved here in the editor. */}
+      {!problem.data.judgeable && group.data ? (
+        <LeetCodeProblem problem={problem.data} group={group.data} userId={me.data?.user.id} />
+      ) : (
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          <Statement problem={problem.data} />
+          <Workspace problem={problem.data} groupId={groupId} />
+        </div>
+      )}
     </div>
   );
 }
@@ -61,11 +68,14 @@ function Statement({ problem: p }: { problem: Problem }) {
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
       <div className="border-b border-line px-6 py-5">
-        <h1 className="text-2xl font-semibold tracking-tight">{p.title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {p.frontend_id && <span className="text-faint">{p.frontend_id}. </span>}
+          {p.title}
+        </h1>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Difficulty level={p.difficulty} />
           {p.topics.map((t) => (
-            <Badge key={t}>{t}</Badge>
+            <Badge key={t}>{t.replaceAll("-", " ")}</Badge>
           ))}
           <span className="ml-auto font-mono text-[11px] text-faint">
             {p.time_limit_ms} ms · {p.memory_limit_mb} MB
@@ -73,14 +83,22 @@ function Statement({ problem: p }: { problem: Problem }) {
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-        <div className="markdown text-[15px]">
-          <ReactMarkdown>{p.statement_md}</ReactMarkdown>
-        </div>
+        {p.statement_html != null ? (
+          // LeetCode's statement, sanitized on import (backend leetcode/importer.py).
+          <div
+            className="markdown leetcode-statement text-[15px]"
+            dangerouslySetInnerHTML={{ __html: p.statement_html }}
+          />
+        ) : (
+          <div className="markdown text-[15px]">
+            <ReactMarkdown>{p.statement_md}</ReactMarkdown>
+          </div>
+        )}
         <div className="mt-6 space-y-3">
           {p.samples.map((s, i) => (
             <div key={i} className="overflow-hidden rounded-lg border border-line bg-sunken">
               <p className="border-b border-line px-3 py-1.5 text-xs font-medium text-muted">
-                Example {i + 1}
+                Sample test {i + 1}
               </p>
               <div className="space-y-1.5 px-3 py-2.5 font-mono text-[13px]">
                 <IO label="input" value={s.input} />
@@ -89,6 +107,15 @@ function Statement({ problem: p }: { problem: Problem }) {
             </div>
           ))}
         </div>
+        {p.source_url && (
+          <p className="mt-6 text-xs text-faint">
+            Problem from{" "}
+            <a href={p.source_url} target="_blank" rel="noopener noreferrer" className="hover:text-fg">
+              LeetCode
+            </a>
+            . Judged here with our own tests.
+          </p>
+        )}
       </div>
     </section>
   );

@@ -148,10 +148,12 @@ const AVATAR_TINTS = [
 
 export function Avatar({
   name,
+  src,
   size = "md",
   ring,
 }: {
   name: string;
+  src?: string | null;
   size?: "sm" | "md" | "lg";
   ring?: "accent" | "none";
 }) {
@@ -164,6 +166,20 @@ export function Avatar({
     .map((p) => p[0]!.toUpperCase())
     .join("");
   const sizes = { sm: "h-6 w-6 text-[10px]", md: "h-8 w-8 text-xs", lg: "h-10 w-10 text-sm" };
+  const ringClass = ring === "accent" && "ring-2 ring-accent ring-offset-2 ring-offset-surface";
+  if (src) {
+    return (
+      // Discord CDN avatars; next/image would need remotePatterns for no real gain at this size.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt=""
+        aria-hidden
+        referrerPolicy="no-referrer"
+        className={cx("shrink-0 rounded-full object-cover", sizes[size], ringClass)}
+      />
+    );
+  }
   return (
     <span
       aria-hidden
@@ -171,7 +187,7 @@ export function Avatar({
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
         AVATAR_TINTS[hash % AVATAR_TINTS.length],
         sizes[size],
-        ring === "accent" && "ring-2 ring-accent ring-offset-2 ring-offset-surface",
+        ringClass,
       )}
     >
       {initials || "?"}

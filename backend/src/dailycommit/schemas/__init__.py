@@ -18,6 +18,11 @@ class UserOut(BaseModel):
     avatar_url: str | None = None
 
 
+class AuthProvidersOut(BaseModel):
+    discord: bool
+    dev: bool
+
+
 class DevLoginIn(BaseModel):
     name: str = Field(min_length=1, max_length=32)
 
@@ -27,6 +32,26 @@ class ProblemSummary(BaseModel):
     title: str
     difficulty: str
     topics: list[str]
+    source: Literal["local", "leetcode"] = "local"
+    source_url: str | None = None  # leetcode.com problem page (LeetCode problems)
+    frontend_id: str | None = None  # LeetCode's problem number
+    # Submittable to our judge: every local problem, and LeetCode problems with a judge pack.
+    # LeetCode problems without one are solved on leetcode.com.
+    judgeable: bool = False
+
+
+class LeetCodeAccountOut(BaseModel):
+    username: str | None  # verified and linked
+    pending_username: str | None  # waiting for the verify code to appear in its profile
+    verify_code: str | None
+
+
+class LeetCodeLinkIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+
+
+class LeetCodeCheckOut(BaseModel):
+    credited: int  # groups where a new solve was recorded
 
 
 class GroupSummary(BaseModel):
@@ -47,6 +72,13 @@ class MeOut(BaseModel):
 
 class GroupCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+    # IANA zone (e.g. "Europe/London"); defaults to the server's DAY_TIMEZONE.
+    timezone: str | None = Field(default=None, max_length=64)
+
+
+class TimezonesOut(BaseModel):
+    default: str
+    zones: list[str]
 
 
 class GroupJoinIn(BaseModel):
@@ -79,6 +111,7 @@ class GroupDetail(BaseModel):
     id: int
     name: str
     invite_code: str
+    timezone: str
     my_role: str
     current_streak: int
     best_streak: int
@@ -95,7 +128,8 @@ class MemberUpdateIn(BaseModel):
 
 
 class DailyOverrideIn(BaseModel):
-    problem_slug: str
+    # A problem slug, or a leetcode.com problem URL (imported on the spot if needed).
+    problem_slug: str = Field(min_length=1, max_length=300)
 
 
 class InviteOut(BaseModel):
@@ -134,11 +168,13 @@ class SampleOut(BaseModel):
 
 class ProblemDetail(ProblemSummary):
     statement_md: str
-    function: str
+    statement_html: str | None  # LeetCode problems: sanitized HTML, safe to render as-is
+    # Judge fields: set when `judgeable` (null/empty otherwise).
+    function: str | None
     params: list[ParamOut]
-    returns: str
-    time_limit_ms: int
-    memory_limit_mb: int
+    returns: str | None
+    time_limit_ms: int | None
+    memory_limit_mb: int | None
     samples: list[SampleOut]
     languages: list[LanguageOut]
     starter_code: dict[str, str]

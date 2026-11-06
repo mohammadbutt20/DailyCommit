@@ -7,9 +7,9 @@ from fastapi import APIRouter, FastAPI
 from redis.asyncio import Redis
 from sqlalchemy import text
 
-from dailycommit.api.auth import dev
+from dailycommit.api.auth import dev, discord
 from dailycommit.api.deps import DB, RedisDep
-from dailycommit.api.routers import auth, groups, problems, submissions
+from dailycommit.api.routers import auth, groups, leetcode, problems, submissions
 from dailycommit.api.ws import Hub, websocket_endpoint
 from dailycommit.config import settings
 
@@ -46,8 +46,11 @@ async def health(db: DB, redis: RedisDep) -> dict[str, bool]:
 
 api.include_router(auth.router)
 api.include_router(groups.router)
+api.include_router(leetcode.router)
 api.include_router(problems.router)
 api.include_router(submissions.router)
+if settings.discord_enabled:
+    api.include_router(discord.router)
 if settings.is_dev:
     api.include_router(dev.router)
 

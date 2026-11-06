@@ -49,7 +49,7 @@ export default function Header() {
             </Link>
             <div className="mx-2 hidden h-5 w-px bg-line sm:block" />
             <div className="flex items-center gap-2 pr-1">
-              <Avatar name={me.data.user.display_name} size="sm" />
+              <Avatar name={me.data.user.display_name} src={me.data.user.avatar_url} size="sm" />
               <span className="text-sm text-fg">{me.data.user.display_name}</span>
             </div>
             <button

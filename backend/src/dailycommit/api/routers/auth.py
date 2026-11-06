@@ -4,9 +4,15 @@ from dailycommit.api.auth.sessions import end_session
 from dailycommit.api.deps import DB, CurrentUser
 from dailycommit.api.routers.groups import group_summaries
 from dailycommit.config import settings
-from dailycommit.schemas import MeOut, UserOut
+from dailycommit.schemas import AuthProvidersOut, MeOut, UserOut
 
 router = APIRouter(tags=["auth"])
+
+
+@router.get("/auth/providers", response_model=AuthProvidersOut)
+async def providers() -> AuthProvidersOut:
+    """Which sign-in options this deployment offers (the login page shows only these)."""
+    return AuthProvidersOut(discord=settings.discord_enabled, dev=settings.is_dev)
 
 
 @router.post("/auth/logout", status_code=204)

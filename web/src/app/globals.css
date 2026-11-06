@@ -134,3 +134,19 @@
 .animate-pulse-dot {
   animation: pulse-dot 1.4s ease-in-out infinite;
 }
+
+/* LeetCode statements (sanitized HTML from leetcode.com): examples are <pre> blocks with
+   inline <strong> labels, and some problems include diagrams. */
+.leetcode-statement pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.leetcode-statement img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: #fff;
+}
+.leetcode-statement strong {
+  color: var(--color-fg);
+}

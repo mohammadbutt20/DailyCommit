@@ -1,0 +1,9 @@
+# Judge pack for https://leetcode.com/problems/two-sum/ (statement comes from the import).
+slug: two-sum
+function: twoSum
+params:
+  - { name: nums, type: "int[]" }
+  - { name: target, type: int }
+returns: "int[]"
+compare: unordered
+limits: { time_ms: 2000, memory_mb: 256 }

@@ -12,6 +12,11 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     display_name: Mapped[str] = mapped_column(String(64))
     avatar_url: Mapped[str | None] = mapped_column(String(512))
+    # Verified LeetCode account (unique, case-insensitive; see migration 0003). Pending fields
+    # hold a link in progress until the code shows up in that LeetCode profile's summary.
+    leetcode_username: Mapped[str | None] = mapped_column(String(64))
+    leetcode_pending_username: Mapped[str | None] = mapped_column(String(64))
+    leetcode_verify_code: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 

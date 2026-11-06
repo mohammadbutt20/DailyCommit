@@ -51,7 +51,8 @@ services:
 
   worker:
     <<: *backend
-    command: arq dailycommit.jobs.worker.WorkerSettings --watch /app/src
+    # watchfiles restarts the whole process on change; arq --watch keeps stale imports.
+    command: watchfiles --filter python "arq dailycommit.jobs.worker.WorkerSettings" /app/src
     volumes:
       - ../backend:/app
       - ../problems:/problems:ro
@@ -61,7 +62,8 @@ services:
 
   scheduler:
     <<: *backend
-    command: arq dailycommit.jobs.scheduler.SchedulerSettings --watch /app/src
+    # watchfiles restarts the whole process on change; arq --watch keeps stale imports.
+    command: watchfiles --filter python "arq dailycommit.jobs.scheduler.SchedulerSettings" /app/src
 
   web:
     build: ../web

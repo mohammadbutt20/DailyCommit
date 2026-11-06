@@ -15,6 +15,7 @@ import {
   Eyebrow,
   Input,
   Loading,
+  Select,
 } from "@/components/ui";
 import { api, unwrap } from "@/lib/api/client";
 import { useRequireMe } from "@/lib/queries";
@@ -24,14 +25,25 @@ export default function GroupsPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [tz, setTz] = useState<string | null>(null);
 
   const groups = useQuery({
     queryKey: ["groups"],
     queryFn: () => unwrap(api.GET("/api/groups")),
     enabled: me.isSuccess,
   });
+  const zones = useQuery({
+    queryKey: ["timezones"],
+    queryFn: () => unwrap(api.GET("/api/groups/timezones")),
+    enabled: me.isSuccess,
+    staleTime: Infinity,
+  });
+  // Until the user picks one, suggest the browser's zone (falling back to the server default).
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timezone =
+    tz ?? (zones.data?.zones.includes(browserTz) ? browserTz : zones.data?.default) ?? null;
   const create = useMutation({
-    mutationFn: () => unwrap(api.POST("/api/groups", { body: { name } })),
+    mutationFn: () => unwrap(api.POST("/api/groups", { body: { name, timezone } })),
     onSuccess: (g) => router.push(`/g/${g.id}`),
   });
   const join = useMutation({
@@ -123,16 +135,37 @@ export default function GroupsPage() {
         <Card>
           <CardHeader title="Create a group" hint="You'll be the leader and get an invite code." />
           <form
-            className="flex gap-2"
+            className="space-y-2"
             onSubmit={(e) => {
               e.preventDefault();
               create.mutate();
             }}
           >
-            <Input placeholder="Group name" value={name} onChange={(e) => setName(e.target.value)} />
-            <Button type="submit" disabled={!name.trim() || create.isPending}>
-              Create
-            </Button>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Group name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Button type="submit" disabled={!name.trim() || !timezone || create.isPending}>
+                Create
+              </Button>
+            </div>
+            <label className="block text-xs text-faint">
+              Day resets at midnight in
+              <Select
+                className="mt-1 w-full"
+                value={timezone ?? ""}
+                onChange={(e) => setTz(e.target.value)}
+                disabled={!zones.data}
+              >
+                {zones.data?.zones.map((z) => (
+                  <option key={z} value={z}>
+                    {z.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </Select>
+            </label>
           </form>
           <ErrorText error={create.error} />
         </Card>

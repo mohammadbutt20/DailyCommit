@@ -6,7 +6,7 @@ Source documents: [`docs/Mohammad Project Proposal (1).pdf`](docs/) (PRD) and [`
 
 **Scope right now:** the P0 MVP for the midpoint demo (code execution, groups, daily problem, group streak, leaderboards), running on a laptop. Everything below is designed so P1 features and a VPS deployment slot in without rewrites.
 
-**Built so far (P0 slice 0):** Python only, dev login only, one app-wide timezone (`DAY_TIMEZONE`). Java/C++, Discord OAuth and per-group timezones are separate follow-up slices; see [§15](#15-build-status-and-slices). Where this document describes those, it is the target design.
+**Built so far (P0 slices 0–3 and 6):** Python, Java and C++ in the sandbox; Discord OAuth plus dev login; per-group timezones (`DAY_TIMEZONE` is the default for new groups); LeetCode import with judge packs, so imported problems are solved and graded here. VPS deploy and the load test are still to come; see [§15](#15-build-status-and-slices).
 
 ---
 
@@ -62,10 +62,11 @@ flowchart TB
 | Identity model | `users` + `auth_identities(provider, provider_user_id)` | Adding GitHub or email login later is a new provider, not a migration. |
 | Sessions | Opaque random token. Its SHA-256 is stored in `sessions`; the token itself is set as an `httpOnly`, `SameSite=Lax`, `Secure` (prod) cookie. | Revocable and simple. The same cookie authenticates the WebSocket handshake because everything is same-origin. |
 | Sandbox | Our own Docker sandbox, one image per language, one container per submission | It's the PRD's core technical component. Judge0/Piston would outsource it, and Judge0 needs cgroup v1 + privileged mode (bad on WSL2). |
-| Problem I/O | LeetCode-style function signatures, JSON test data, generated harness per language | Feels like real interview prep. A typed signature drives starter code and harness generation for all three languages. |
+| Problem source | **LeetCode problems, solved and judged here.** Imported from LeetCode (study plans, difficulty/topic filters, or single URLs) with statement, difficulty and topics, each linked to its LeetCode page. A problem becomes solvable in our editor once it has a **judge pack** (`problems/leetcode/<slug>/`: signature, compare mode, limits, our tests, reference solutions in every language); only those are auto-picked. LeetCode problems without a pack (e.g. a leader's ad-hoc pick) are solved on leetcode.com: members link a LeetCode account (ownership proved by a code in their profile summary) and the scheduler credits their recent accepted submissions. That check also still credits packed problems solved on leetcode.com. Local `problems/` hold original content and are the fallback pool. | The goal is team LeetCode practice, and LeetCode's curated lists are what members want to work through, but members shouldn't have to leave the app. LeetCode's hidden tests aren't public, so a pack carries our own tests: samples from LeetCode's examples, hidden edge cases written by us. Statements are never committed (public repo); they come from the import. |
+| Problem I/O (judged problems) | LeetCode-style function signatures, JSON test data, generated harness per language. Same format for local problems and judge packs. | Feels like real interview prep. A typed signature drives starter code and harness generation for all three languages. |
 | Queue + jobs | `arq` (async, Redis-backed) for both the execution queue and cron | Same async model as FastAPI, little code. Workers and scheduler run as separate processes. |
 | Worker language | Python | One backend language with shared models and DB code. Container start and compile time dominate latency, not the worker. Closes the PRD's "Go instead?" question. |
-| Day boundary | Per-group IANA timezone (default `America/New_York`). The day rolls at local midnight. | Works for any group, anywhere. Rollover is also the streak-evaluation moment and (P1) the solution-unlock moment. |
+| Day boundary | Per-group IANA timezone, chosen at creation (default `DAY_TIMEZONE`, `America/New_York`) and fixed after that, since changing it would shift already-evaluated days. The day rolls at local midnight. | Works for any group, anywhere. Rollover is also the streak-evaluation moment and (P1) the solution-unlock moment. |
 | Streak rule | Eligible members = joined before the day started **and** not `paused`. Streak +1 if every eligible member solved, else reset to 0. No eligible members → unchanged. | Faithful to "everyone keeps it alive," but a late joiner or an inactive member a leader paused can't kill it. |
 | Groups | A user can be in many groups. Each group has its own daily problem. | Pledge class + clubs. One accepted solve counts for every group of that user whose today-problem matches. |
 | Daily pick | Auto: least-recently-used problem for that group, rotating topics. A leader can override tomorrow's pick. | Zero maintenance by default, control when wanted. |
@@ -123,8 +124,10 @@ sandbox/images/
   python/Dockerfile           python:3.12-slim
   java/Dockerfile             eclipse-temurin:21-jdk + Gson jar
   cpp/Dockerfile              gcc + nlohmann/json header
-problems/<slug>/
+problems/<slug>/              local (original) problems
   problem.yaml  statement.md  tests.json  solutions/ref.{py,java,cpp}
+problems/leetcode/<slug>/     judge packs for imported LeetCode problems (no statement)
+  judge.yaml  tests.json  solutions/ref.{py,java,cpp}
 infra/
   compose.yaml                dev stack (hot reload)
   compose.prod.yaml           prod overrides
@@ -216,10 +219,34 @@ limits: { time_ms: 2000, memory_mb: 256 }
 - **Types (v1):** `int`, `long`, `double`, `bool`, `string`, and 1-D (`[]`) / 2-D (`[][]`) arrays of each. `ListNode` and `TreeNode` are reserved names for later (serialized as LeetCode-style level-order arrays).
 - **Type mapping:** `int[]` → `list[int]` / `int[]` / `vector<int>`; `long` → `int` / `long` / `long long`; `string[]` → `list[str]` / `String[]` / `vector<string>`; and so on. The mapping lives in `sandbox/codegen/` and is used both for starter code and for the harness.
 - **Harness:** generated per language from the signature. It reads the inputs JSON, deserializes the typed args, calls the user function inside a try/catch, serializes the return value, and times each call. Java uses Gson and C++ uses nlohmann/json; both are baked into the images.
-- **Validation:** `sync-problems` checks the schema and type-checks every test against the signature. It also **runs each `solutions/ref.*` through the real sandbox** and fails if any reference solution doesn't get AC, which verifies the hand-written expected outputs.
+- **Validation:** `sync-problems` checks the schema and type-checks every test against the signature. It also **runs each `solutions/ref.*` through the real sandbox** and fails if any reference solution doesn't get AC, which verifies the hand-written expected outputs. This applies to local problems and judge packs alike.
 - **Upsert:** by `slug`, with `content_hash` to skip unchanged problems. Removing a problem from the repo marks it `retired` rather than deleting it (submissions reference it).
 - **Exposure:** the API sends the statement, sample tests and starter code. Hidden tests and expected outputs never leave the backend.
-- **Content rule** (PRD): an original set of 30–40 problems, with no scraping of LeetCode or NeetCode.
+- **Content:** the daily pool is imported LeetCode problems that have a judge pack (below). Local problems are for original content and are the fallback when no packed LeetCode problem exists.
+
+### LeetCode problems
+
+`python -m dailycommit.leetcode import` (`make import-leetcode`) reads LeetCode's public GraphQL API (unofficial; all calls live in `leetcode/client.py`) and upserts `problems` rows with `source='leetcode'`: title, number, difficulty, topic tags, `source_url`, and the statement HTML **sanitized once on import** (`nh3`), so the browser renders it directly. Paid-only questions are skipped. The importer never touches the judge fields (`signature`, `compare`, `limits`, `judge_hash`), so re-importing keeps a problem judgeable. A leader can set tomorrow's problem to any LeetCode URL; it's imported on the spot.
+
+### Judge packs
+
+A judge pack makes an imported LeetCode problem judgeable in our sandbox:
+
+```
+problems/leetcode/two-sum/
+  judge.yaml        slug, function, params, returns, compare, limits (same fields as problem.yaml)
+  tests.json        samples = LeetCode's examples; hidden tests = our own edge cases
+  solutions/ref.py  ref.java  ref.cpp   (all three required)
+```
+
+- **No statement in the repo.** Title, difficulty, topics and statement come from the imported row; a `statement.md` in a pack fails validation. Hidden tests are written by us, never copied from LeetCode.
+- **Validation** is the same as for local problems, plus: every language has a reference solution, the folder matches the slug, and no local problem uses the slug. Every reference must AC in the real sandbox before a pack loads; `sync --no-verify` skips packs entirely.
+- **Sync** (`make sync-problems`) attaches each pack to its `source='leetcode'` row (importing it first if it's missing, which needs LeetCode to be reachable). It sets `signature`/`compare`/`limits`/`judge_hash` and replaces `test_cases` when `judge_hash` (over `judge.yaml`, `tests.json` and the solutions) changed. A pack removed from the repo detaches: its row loses the judge fields and tests and goes back to LeetCode-only (not retired).
+- **Judgeable** means `signature IS NOT NULL` (`Problem.judgeable`, exposed as `judgeable` in the API). Judgeable problems get the normal editor workspace and accept submissions whatever their `source`; for the rest, `POST /submissions` returns 400 and the UI shows the LeetCode flow.
+
+**Daily pick:** only from non-retired, judgeable problems (`domain.daily_pick.daily_pool`): packed LeetCode problems when any exist, otherwise local ones. A problem without a judge pack is never auto-picked; leaders can still assign one by hand.
+
+**Solving on leetcode.com and verification** (problems without a pack, and as a second way to credit packed ones). A member links a LeetCode username, gets a code (`dailycommit-xxxxxx`), puts it in their LeetCode profile Summary, and we verify it there (`matchedUser.profile.aboutMe`), so nobody can claim someone else's solves. Every scheduler tick, before the rollover, `services/leetcode_solves.py` finds members who still owe a LeetCode problem on an unevaluated day and reads their `recentAcSubmissionList` (last 20 accepts, public). Matches go through the same `record_solves` as our judge, with `external_ref` set to the LeetCode submission id instead of `submission_id`. "Check now" (`POST /me/leetcode/check`, 15 s cooldown) does the same on demand. `record_solves` never credits a day the rollover already evaluated, so a late-seen accept can't contradict a recorded streak outcome.
 
 ---
 
@@ -234,7 +261,7 @@ P0 tables. All timestamps are `timestamptz` in UTC; `day` columns are the group-
 | `sessions` | id, user_id, token_hash (unique), created_at, expires_at |
 | `groups` | id, name, invite_code (unique), timezone, current_streak, best_streak, last_rolled_day, created_by, created_at |
 | `group_members` | group_id, user_id, role (`leader` / `member`), joined_at, paused; PK(group_id, user_id) |
-| `problems` | id, slug (unique), title, difficulty, topics (text[]), statement_md, signature (jsonb), compare (jsonb), limits (jsonb), content_hash, retired |
+| `problems` | id, slug (unique), title, difficulty, topics (text[]), source (`local` / `leetcode`), source_url, frontend_id, statement_md, statement_html (LeetCode, sanitized), signature (jsonb), compare (jsonb), limits (jsonb), content_hash, judge_hash (LeetCode judge pack), retired. Judge fields are NULL when not judgeable here. |
 | `test_cases` | id, problem_id, ordinal, is_sample, input (jsonb), expected (jsonb) |
 | `group_daily_problems` | group_id, day, problem_id, assigned_by (`auto` / user_id); unique(group_id, day) |
 | `submissions` | id, user_id, problem_id, language, kind (`run` / `submit`), code, status (`queued` / `running` / `done`), verdict, passed, total, runtime_ms, created_at, finished_at |
@@ -261,12 +288,12 @@ For each group where the group-local date is past `last_rolled_day`, for each da
    - else → `current_streak = 0`
    - write a `group_streak_days` row (unique constraint makes re-runs no-ops)
 2. **(P1 hook)** unlock solutions for *d*, post the Discord summary.
-3. **Ensure today's problem.** If no `group_daily_problems` row exists for today, pick with `domain.daily_pick` (least-recently-used for this group, avoiding yesterday's topic) and insert it.
+3. **Ensure today's problem.** If no `group_daily_problems` row exists for today, pick with `domain.daily_pick` (from the judgeable pool, least-recently-used for this group, avoiding yesterday's topic) and insert it.
 4. Advance `last_rolled_day`, all in one transaction per group.
 
 Creating a group assigns today's problem immediately. A leader override for tomorrow is just a pre-inserted `group_daily_problems` row, which step 3 respects.
 
-**"Solved today"** means an `AC` `submit` whose `finished_at`, converted to the group's timezone, falls on that group's day *d*, for that day's problem. All local-day math goes through `domain/timeutil.py` (zoneinfo), which is unit-tested for DST transitions.
+**"Solved today"** means an `AC` `submit` (or, for LeetCode problems, an Accepted LeetCode submission) whose time, converted to the group's timezone, falls on that group's day *d*, for that day's problem, and *d* hasn't been evaluated yet. All local-day math goes through `domain/timeutil.py` (zoneinfo), which is unit-tested for DST transitions.
 
 **Leaderboards** (`domain.leaderboard`):
 - **Daily:** today's solvers, ordered by `solved_at`.
@@ -285,11 +312,13 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 | Method & path | Purpose |
 |---|---|
 | `GET /auth/discord/login` | Redirect to Discord (sets `state` cookie for CSRF) |
-| `GET /auth/discord/callback` | Exchange code, upsert user + identity, create session, redirect to `/groups` |
+| `GET /auth/discord/callback` | Check `state`, exchange code, upsert user + identity, create session, redirect to the `next` path from login (same-site paths only; default `/groups`). Failures redirect to `/login?error=…` |
+| `GET /auth/providers` | Which sign-in options are enabled: `{discord, dev}` |
 | `GET /auth/dev/users`, `POST /auth/dev/login {name}` | **ENV=dev only** (routes not registered otherwise); list dev users / log in as any name (creates the user on first use) |
 | `POST /auth/logout` | Delete session |
 | `GET /me` | Current user + groups |
-| `POST /groups` | Create group (creator = leader) |
+| `POST /groups {name, timezone?}` | Create group (creator = leader); unknown IANA zone → 422 |
+| `GET /groups/timezones` | Valid IANA zones + the default for new groups |
 | `POST /groups/join {invite_code}` | Join |
 | `GET /groups` | My groups |
 | `GET /groups/{id}` | Dashboard: today's problem, streak, members with solved-today status |
@@ -298,7 +327,9 @@ All under `/api`. JSON in and out. Auth via the session cookie; `401` when it's 
 | `POST /groups/{id}/invite/rotate` | Leader: new invite code |
 | `GET /groups/{id}/leaderboard?period=day\|week` | Leaderboard |
 | `GET /problems/{slug}` | Statement, samples, starter code per language (only for problems assigned to one of your groups, or any in dev) |
-| `POST /submissions` | Create run/submit |
+| `POST /submissions` | Create run/submit (judgeable problems only: local, or LeetCode with a judge pack; otherwise 400) |
+| `GET/PUT/DELETE /me/leetcode`, `POST /me/leetcode/verify` | Link a LeetCode account: PUT `{username}` returns a code; verify once it's in the profile Summary |
+| `POST /me/leetcode/check` | Credit today's LeetCode accepts now (15 s cooldown) |
 | `GET /submissions/{id}` | Status, verdict, per-test results (owner only in P0) |
 | `GET /health` | Liveness for compose/Caddy |
 
@@ -382,9 +413,9 @@ make seed             # demo users, a group, some history
 
 `make help` lists every target.
 
-The dev compose bind-mounts source for hot reload (`uvicorn --reload`, `next dev`, `arq --watch`).
+The dev compose bind-mounts source for hot reload (`uvicorn --reload`, `next dev`, and `watchfiles` restarting the arq processes; `arq --watch` is not used because it restarts in-process and keeps stale imports).
 
-**Discord OAuth in dev:** create an application at discord.com/developers, add the redirect `http://localhost:8080/api/auth/discord/callback`, and put `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` in `.env`.
+**Discord OAuth in dev:** create an application at discord.com/developers, add the redirect `http://localhost:8080/api/auth/discord/callback`, and put `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` in `.env`. The redirect is built from `PUBLIC_URL` (default `http://localhost:8080`). Without both credentials the Discord routes aren't registered and `GET /auth/providers` reports `discord: false`, so the login page shows dev login only. Discord's access token is used once to read the profile and never stored; name and avatar refresh on every login.
 
 ---
 
@@ -405,7 +436,7 @@ The dev compose bind-mounts source for hot reload (`uvicorn --reload`, `next dev
 | `domain/` unit tests | Streak evaluation edge cases (late joiner, paused, empty group, missed day), multi-day catch-up, DST transitions in `timeutil`, daily pick rotation, leaderboard ordering. P1: SM-2 and ELO. |
 | API tests | pytest + httpx against a disposable Postgres/Redis: auth/session, group join, authorization checks, problem exposure (hidden tests never returned) |
 | Sandbox suite (`-m sandbox`) | Needs Docker. Adversarial programs per language (§5 threats) must yield TLE/MLE/RE and leave no containers behind; AC/WA/CE fixtures per language. |
-| Problem validation | `make sync-problems` runs every reference solution in every provided language |
+| Problem validation | `make validate-problems` / `make sync-problems` run every reference solution (local problems and judge packs) in every provided language in the real sandbox; the sandbox suite also checks every pack's references. Unit tests cover pack loading/validation and the Python references without Docker. |
 | Later | k6 or Locust load test (queue throughput, p50/p95 verdict latency, for the PRD's performance metric); Playwright smoke test of the submit flow |
 
 ---
@@ -418,11 +449,12 @@ Each later slice is independent and should land as its own change:
 
 | Slice | Work | Touch points |
 |---|---|---|
-| 1. Java + C++ | Images (temurin 21 + Gson, gcc + nlohmann/json), harness/starter codegen, compile step inside the container, `ref.java` / `ref.cpp` for every problem | `sandbox/codegen/`, `sandbox/languages.py`, `sandbox/images/`, Makefile `sandbox-images` |
-| 2. Discord OAuth | `/auth/discord/login` + `/callback` (state cookie), `discord` identities, avatar, login button | `api/auth/`, `config.py`, login page |
-| 3. Per-group timezone | `groups.timezone` column + migration, timezone picker on create, per-group day in `record_solves` | `services/clock.py` (`group_tz`), `services/solves.py` |
+| 1. Java + C++ (**built**) | Images (temurin 21 + Gson, gcc + nlohmann/json), harness/starter codegen, compile step inside the container, `ref.java` / `ref.cpp` for every problem | `sandbox/codegen/`, `sandbox/languages.py`, `sandbox/images/`, Makefile `sandbox-images` |
+| 2. Discord OAuth (**built**) | `/auth/discord/login` + `/callback` (state cookie), `discord` identities, avatar, login button | `api/auth/`, `config.py`, login page |
+| 3. Per-group timezone (**built**) | `groups.timezone` column + migration 0002, `GET /groups/timezones`, timezone picker on create, per-group day in `record_solves` | `services/clock.py` (`group_tz`), `services/solves.py` |
 | 4. VPS deploy | `compose.prod.yaml`, Caddy domain + HTTPS, production web build, backups, `SANDBOX_RUNTIME=runsc` | `infra/` |
 | 5. Load test | k6/Locust: queue throughput, p50/p95 verdict latency | new `loadtest/` |
+| 6. Judge packs (**built**) | Judge imported LeetCode problems here: `problems/leetcode/<slug>/` packs (pilot: two-sum, valid-parentheses, merge-intervals), migration 0004 (`judge_hash`), judgeable-only daily pool, editor workspace for packed LeetCode problems | `problems/loader.py`, `problems/__main__.py`, `domain/daily_pick.py`, `services/daily.py`, today page |
 
 P1 features follow in PRD priority order, at the extension points in §11.
 

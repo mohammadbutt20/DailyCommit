@@ -30,16 +30,39 @@ function HeroGraph() {
   );
 }
 
-// Dev login only for now: pick a name, no password. Discord OAuth is a later slice.
-function DevLogin() {
+const LOGIN_ERRORS: Record<string, string> = {
+  discord_denied: "Discord sign-in was cancelled.",
+  discord_state: "That sign-in link expired or was already used. Please try again.",
+  discord_failed: "Couldn't reach Discord to finish signing in. Please try again.",
+};
+
+function DiscordMark() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <path d="M20.32 4.37a19.8 19.8 0 0 0-4.89-1.52.07.07 0 0 0-.08.04c-.21.38-.44.87-.61 1.25a18.27 18.27 0 0 0-5.48 0 12.6 12.6 0 0 0-.62-1.25.08.08 0 0 0-.08-.04 19.74 19.74 0 0 0-4.89 1.52.07.07 0 0 0-.03.03C.53 9.05-.32 13.58.1 18.06a.08.08 0 0 0 .03.06 19.9 19.9 0 0 0 5.99 3.03.08.08 0 0 0 .08-.03c.46-.63.87-1.3 1.23-2a.08.08 0 0 0-.04-.1 13.1 13.1 0 0 1-1.87-.9.08.08 0 0 1 0-.12l.37-.29a.07.07 0 0 1 .08-.01c3.93 1.79 8.18 1.79 12.07 0a.07.07 0 0 1 .08.01l.37.29a.08.08 0 0 1 0 .12c-.6.35-1.22.65-1.87.9a.08.08 0 0 0-.04.1c.36.7.78 1.37 1.23 2a.08.08 0 0 0 .08.03 19.84 19.84 0 0 0 6-3.03.08.08 0 0 0 .03-.05c.5-5.18-.84-9.67-3.55-13.66a.06.06 0 0 0-.03-.03ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.97 0c-1.18 0-2.15-1.08-2.15-2.42 0-1.33.95-2.42 2.15-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.95 2.42-2.16 2.42Z" />
+    </svg>
+  );
+}
+
+function LoginCard() {
   const router = useRouter();
-  const next = useSearchParams().get("next") || "/groups";
+  const params = useSearchParams();
+  const next = params.get("next") || "/groups";
+  const loginError = LOGIN_ERRORS[params.get("error") ?? ""];
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
 
+  const providers = useQuery({
+    queryKey: ["auth-providers"],
+    queryFn: () => unwrap(api.GET("/api/auth/providers")),
+    staleTime: Infinity,
+  });
+  const devEnabled = providers.data?.dev ?? false;
+  const discordEnabled = providers.data?.discord ?? false;
   const users = useQuery({
     queryKey: ["dev-users"],
     queryFn: () => unwrap(api.GET("/api/auth/dev/users")),
+    enabled: devEnabled,
   });
   const login = useMutation({
     mutationFn: (n: string) => unwrap(api.POST("/api/auth/dev/login", { body: { name: n } })),
@@ -70,8 +93,37 @@ function DevLogin() {
       <Card className="p-6 sm:p-7">
         <h2 className="text-lg font-semibold tracking-tight">Sign in</h2>
         <p className="mt-1 text-sm text-muted">
-          Dev login: pick any name. Discord sign-in comes later.
+          {discordEnabled
+            ? "Use your Discord account. We only see your name and avatar."
+            : devEnabled
+              ? "Dev login: pick any name. Set DISCORD_CLIENT_ID/SECRET to enable Discord."
+              : providers.isPending
+                ? "Loading sign-in options…"
+                : "No sign-in method is configured."}
         </p>
+        {loginError && (
+          <p className="mt-4 rounded-lg border border-[#f8514933] bg-[#f851491a] px-3 py-2 text-sm text-[#ff7b72]">
+            {loginError}
+          </p>
+        )}
+        {discordEnabled && (
+          // A real navigation, not fetch: the browser has to follow the redirects to Discord and back.
+          <a
+            href={`/api/auth/discord/login?next=${encodeURIComponent(next)}`}
+            className="mt-6 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#5865F2] text-sm font-semibold text-white transition-colors hover:bg-[#4752C4]"
+          >
+            <DiscordMark />
+            Continue with Discord
+          </a>
+        )}
+        {devEnabled && discordEnabled && (
+          <div className="mt-6 flex items-center gap-3">
+            <span className="h-px flex-1 bg-line" />
+            <Eyebrow>dev login</Eyebrow>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+        )}
+        {devEnabled && (
         <form
           className="mt-6 flex gap-2"
           onSubmit={(e) => {
@@ -90,7 +142,8 @@ function DevLogin() {
             {login.isPending ? <Spinner /> : "Continue"}
           </Button>
         </form>
-        {users.data && users.data.length > 0 && (
+        )}
+        {devEnabled && users.data && users.data.length > 0 && (
           <div className="mt-7">
             <div className="mb-3 flex items-center gap-3">
               <span className="h-px flex-1 bg-line" />
@@ -121,7 +174,7 @@ function DevLogin() {
 export default function LoginPage() {
   return (
     <Suspense>
-      <DevLogin />
+      <LoginCard />
     </Suspense>
   );
 }

@@ -108,6 +108,22 @@ class ProblemSpec(BaseModel):
         return Signature(function=self.function, params=self.params, returns=self.returns)
 
 
+class JudgePackSpec(BaseModel):
+    """problems/leetcode/<slug>/judge.yaml: how to judge an imported LeetCode problem here.
+    No title, difficulty, topics or statement: those come from the LeetCode import."""
+
+    slug: str = Field(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
+    function: str
+    params: list[Param]
+    returns: str
+    compare: Compare = "exact"
+    limits: Limits = Limits()
+
+    @property
+    def signature(self) -> Signature:
+        return Signature(function=self.function, params=self.params, returns=self.returns)
+
+
 class TestSpec(BaseModel):
     """One entry of tests.json"""
 

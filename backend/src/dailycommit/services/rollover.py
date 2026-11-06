@@ -19,8 +19,8 @@ async def rollover_group(db: AsyncSession, group_id: int, now: datetime) -> None
     group = await db.scalar(select(Group).where(Group.id == group_id).with_for_update())
     if group is None:
         return
-    tz = group_tz(group.id)
-    current_day = today(group.id, now)
+    tz = group_tz(group)
+    current_day = today(group, now)
     members = [
         streaks.Member(m.user_id, m.joined_at, m.paused)
         for m in (
