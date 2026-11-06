@@ -147,6 +147,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups/{group_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Activity
+         * @description The group's most recent solves and joins, newest first (the live feed's history).
+         */
+        get: operations["get_activity_api_groups__group_id__activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/groups/{group_id}/members/{user_id}": {
         parameters: {
             query?: never;
@@ -384,6 +404,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActivityOut
+         * @description One entry of a group's activity feed. Live `solve`/`join` events on `group:{id}` carry
+         *     the same `id`, so the browser can merge history and live events without duplicates.
+         */
+        ActivityOut: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "solve" | "join";
+            /** User Id */
+            user_id: number;
+            /** Display Name */
+            display_name: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Problem Slug */
+            problem_slug: string | null;
+        };
         /** AuthProvidersOut */
         AuthProvidersOut: {
             /** Discord */
@@ -980,6 +1025,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GroupDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_activity_api_groups__group_id__activity_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                group_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityOut"][];
                 };
             };
             /** @description Validation Error */

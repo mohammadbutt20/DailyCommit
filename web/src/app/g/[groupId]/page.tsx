@@ -23,27 +23,34 @@ import {
   cx,
 } from "@/components/ui";
 import { api, type Schemas, unwrap } from "@/lib/api/client";
-import { clockTime, duration, nextDay, untilText } from "@/lib/format";
+import { type FeedItem, feedText, fromHistory, fromLive, isSameLocalDay, mergeFeed } from "@/lib/feed";
+import { clockTime, duration, nextDay, shortDate, untilText } from "@/lib/format";
 import { useGroup, useRequireMe } from "@/lib/queries";
 import { useTopic } from "@/lib/ws";
 
 type Group = Schemas["GroupDetail"];
-type FeedItem = { at: number; who: string; text: string; kind: "solve" | "join" };
 
 export default function GroupPage() {
   const groupId = Number(useParams<{ groupId: string }>().groupId);
   const me = useRequireMe();
   const group = useGroup(groupId);
   const queryClient = useQueryClient();
-  const [feed, setFeed] = useState<FeedItem[]>([]);
+  // The feed = history from the database + live events on top, deduplicated by event id, so
+  // it survives a refresh and an event that arrives both ways shows once.
+  const history = useQuery({
+    queryKey: ["activity", groupId],
+    queryFn: () =>
+      unwrap(api.GET("/api/groups/{group_id}/activity", { params: { path: { group_id: groupId } } })),
+    enabled: me.isSuccess,
+  });
+  const [live, setLive] = useState<{ groupId: number; items: FeedItem[] }>({ groupId, items: [] });
+  const liveItems = live.groupId === groupId ? live.items : [];
+  const feed = mergeFeed([liveItems, (history.data ?? []).map(fromHistory)]);
 
   useTopic(me.isSuccess ? `group:${groupId}` : null, (msg) => {
-    const who = String(msg.data.display_name ?? "Someone");
-    const at = Date.now();
-    if (msg.event === "solve")
-      setFeed((f) => [{ at, who, text: "solved today's problem", kind: "solve" as const }, ...f].slice(0, 20));
-    if (msg.event === "join")
-      setFeed((f) => [{ at, who, text: "joined the group", kind: "join" as const }, ...f].slice(0, 20));
+    const item = fromLive(msg.event, msg.data);
+    if (item)
+      setLive((l) => ({ groupId, items: mergeFeed([[item], l.groupId === groupId ? l.items : []]) }));
     queryClient.invalidateQueries({ queryKey: ["group", groupId] });
     queryClient.invalidateQueries({ queryKey: ["leaderboard", groupId] });
   });
@@ -96,19 +103,27 @@ export default function GroupPage() {
               }
             />
             {feed.length === 0 ? (
-              <Empty>Solves and joins show up here as they happen.</Empty>
+              history.isPending ? (
+                <Empty>Loading activity…</Empty>
+              ) : history.isError ? (
+                <ErrorText error={history.error} />
+              ) : (
+                <Empty>Solves and joins show up here as they happen.</Empty>
+              )
             ) : (
               <ul className="space-y-3">
-                {feed.map((item, i) => (
-                  <li key={`${item.at}-${i}`} className="flex items-center gap-3 text-sm">
+                {feed.map((item) => (
+                  <li key={item.id} className="flex items-center gap-3 text-sm">
                     <Avatar name={item.who} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="font-medium">{item.who}</span>{" "}
                       <span className={item.kind === "solve" ? "text-accent" : "text-muted"}>
-                        {item.text}
+                        {feedText(item)}
                       </span>
                     </span>
-                    <span className="font-mono text-[11px] text-faint">{clockTime(item.at)}</span>
+                    <span className="font-mono text-[11px] text-faint">
+                      {isSameLocalDay(item.at, Date.now()) ? clockTime(item.at) : shortDate(item.at)}
+                    </span>
                   </li>
                 ))}
               </ul>

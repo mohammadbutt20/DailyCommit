@@ -47,3 +47,8 @@ export function verdictSurface(verdict: string | null | undefined): string {
 export function clockTime(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
+
+/** "Nov 5": for timestamps that aren't from today. */
+export function shortDate(ms: number): string {
+  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+}

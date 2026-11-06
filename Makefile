@@ -49,8 +49,9 @@ import-leetcode: ## Import LeetCode problems as the daily pool (LC="..." to choo
 seed: ## Demo users, group (invite DEMO2026) and a week of history
 	$(EXEC) api python -m dailycommit.seed
 
-test: ## Backend unit tests (no Docker sandbox needed)
+test: ## Backend + web unit tests (no Docker sandbox needed)
 	$(EXEC) api pytest
+	$(EXEC) web node --test 'src/**/*.test.ts'
 
 test-sandbox: ## Adversarial sandbox tests (needs sandbox images)
 	$(EXEC) worker pytest -m sandbox

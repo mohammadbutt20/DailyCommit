@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dailycommit.domain.activity import solve_id
 from dailycommit.models import Group, GroupDailyProblem, GroupDaySolve, GroupMember
 from dailycommit.services import leaderboard
 from dailycommit.services.clock import today
@@ -83,6 +84,7 @@ async def announce_solves(
             group_topic(group_id),
             "solve",
             {
+                "id": solve_id(day, user_id),  # same id as in GET /groups/{id}/activity
                 "user_id": user_id,
                 "display_name": display_name,
                 "problem": problem_slug,

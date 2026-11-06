@@ -12,7 +12,7 @@ Next.js (App Router) + TypeScript + Tailwind + Monaco + TanStack Query · FastAP
 ## Repo map
 - `web/`: Next.js app. `web/src/lib/api/schema.ts` is **generated**; never hand-edit it.
 - `backend/src/dailycommit/`: one Python package with three entrypoints: `api/` (FastAPI), `jobs/worker.py` (executes submissions), `jobs/scheduler.py` (daily rollover cron).
-  - `domain/`: pure business logic (streaks, daily pick, leaderboard, time math; later SM-2, ELO).
+  - `domain/`: pure business logic (streaks, daily pick, leaderboard, activity feed, time math; later SM-2, ELO).
   - `services/`: DB/Redis operations shared by the three entrypoints (rollover, solves, leaderboard cache, events). `services/clock.py` is the only place that decides a group's timezone.
   - `sandbox/`: Docker orchestration, language registry, harness/starter-code generation, output comparison.
   - `problems/`: CLI that validates and syncs `problems/` into the DB.
@@ -36,7 +36,7 @@ make validate-problems  # check problems/ + run reference solutions (no DB write
 make sync-problems    # validate + load problems/ into the DB
 make import-leetcode  # import LeetCode problems (default Top Interview 150; LC="--plan leetcode-75" etc.)
 make seed             # demo users/group/history; use dev login to sign in
-make test             # backend unit tests
+make test             # backend unit tests + web unit tests (node --test src/**/*.test.ts)
 make test-sandbox     # adversarial sandbox suite (needs Docker + sandbox images)
 make lint             # ruff + tsc
 make gen-api          # regenerate web/src/lib/api/schema.ts from FastAPI OpenAPI
