@@ -46,7 +46,7 @@ Backend unit tests also run without Docker: `cd backend && uv sync && uv run pyt
 
 ## Invariants (do not break)
 1. **The API and worker never execute user code in-process.** User code runs only inside a sandbox container with the limits in ARCHITECTURE.md §5. Never loosen those flags (network, caps, read-only, pids, memory, user) without explicit approval.
-2. **Expected outputs never enter the sandbox,** and hidden tests never reach the browser. Comparison happens in the worker.
+2. **Expected outputs never enter the sandbox,** and comparison happens in the worker. Hidden-test inputs do enter it, but only in a container whose program-controlled output (stdout, return values, error and compiler text) is never shown (`runner.judge_submission`); the API never returns hidden inputs. **Time is measured by the worker**, never trusted from harness lines (ARCHITECTURE.md §5).
 3. **`domain/` is pure:** no DB, Redis, HTTP or clock access (pass `now`/dates in). Every rule there has unit tests.
 4. **All "what day is it" math goes through `domain/timeutil.py`** using the group's IANA timezone. Never use server-local dates or naive datetimes; store UTC `timestamptz`.
 5. **Scheduled jobs are idempotent.** They're backed by unique constraints and safe to re-run or run late. Exactly one `scheduler` replica.

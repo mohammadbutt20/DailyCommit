@@ -8,7 +8,7 @@ import pytest
 from dailycommit.problems.schema import Signature
 from dailycommit.sandbox.backend import RunOutcome, RunRequest
 from dailycommit.sandbox.codegen import cpp, java
-from dailycommit.sandbox.languages import COMPILE_FAILED, CPP, JAVA, LANGUAGES
+from dailycommit.sandbox.languages import COMPILE_FAILED, CPP, JAVA, LANGUAGES, PYTHON
 from dailycommit.sandbox.runner import HIDDEN_ERROR, TestInput, run_tests
 
 SIG = Signature.model_validate(
@@ -69,6 +69,17 @@ def test_java_heap_follows_problem_limit():
     assert "-Xmx256m" in JAVA.run_command("@@m@@", 256)[2]
 
 
+def test_program_heap_is_capped_but_never_the_compiler():
+    # Python: the container's cap. C++: the cap plus the solution thread's 256 MB stack.
+    py = PYTHON.run_command("@@m@@", 128)
+    assert py[-1] == "@@m@@" and f"ulimit -d {(128 + 32) * 1024} && exec python3" in py[2]
+    script = CPP.run_command("@@m@@", 128)[2]
+    compile_part, run_part = script.split("; ulimit -d ")
+    assert "g++" in compile_part and "ulimit" not in compile_part
+    assert run_part.startswith(f"{(128 + 96 + 256) * 1024} && exec /work/main")
+    assert "ulimit" not in JAVA.run_command("@@m@@", 128)[2]
+
+
 def test_registry():
     assert set(LANGUAGES) == {"python", "java", "cpp"}
 
@@ -88,10 +99,12 @@ class ScriptedSandbox:
         return self.outcome
 
 
+# Protocol tests: samples only, so details are revealed (opaque runs: test_runner_protocol.py).
 TESTS = [
     TestInput({"blocks": [], "label": "a"}, [], True),
-    TestInput({"blocks": [], "label": "b"}, [], False),
+    TestInput({"blocks": [], "label": "b"}, [], True),
 ]
+READY = {"ready": True}
 
 
 def run(sandbox, lang=CPP):
@@ -112,6 +125,7 @@ def test_compile_failure_reports_compiler_output():
 def test_compile_marker_after_results_is_ignored():
     # Only the wrapper prints it before any user code runs; a late one is user forgery.
     lines = [
+        READY,
         {"i": 0, "out": [], "ms": 1, "err": None, "stdout": ""},
         COMPILE_FAILED,
         {"i": 1, "out": [], "ms": 1, "err": None, "stdout": ""},

@@ -6,7 +6,7 @@ from dailycommit.problems.loader import load_all
 from dailycommit.problems.schema import Signature, check_value
 from dailycommit.sandbox.codegen.python import starter_code
 from dailycommit.sandbox.languages import PYTHON
-from dailycommit.sandbox.runner import HIDDEN_ERROR, TestInput, run_tests
+from dailycommit.sandbox.runner import HIDDEN_ERROR, TestInput, judge_submission, run_tests
 from tests.conftest import PROBLEMS_DIR
 
 PROBLEMS = load_all(PROBLEMS_DIR)
@@ -22,7 +22,8 @@ TESTS = [TestInput({"a": 1, "b": 2}, 3, True), TestInput({"a": 5, "b": 5}, 10, F
 
 
 def run(sandbox, code, tests=TESTS, limits=LIMITS, events=None):
-    return run_tests(
+    """As the worker judges it: samples, then (if they pass) hidden tests in a second run."""
+    return judge_submission(
         sandbox,
         PYTHON,
         code,
@@ -91,7 +92,7 @@ def test_accepted_with_events(local_sandbox):
 def test_wrong_answer(local_sandbox):
     report = run(local_sandbox, "class Solution:\n    def add(self, a, b):\n        return a - b\n")
     assert report.verdict == "WA"
-    assert [r.verdict for r in report.results] == ["WA", "WA"]
+    assert [r.verdict for r in report.results] == ["WA", "skipped"]  # hidden tests not run
 
 
 def test_runtime_error_details_only_on_samples(local_sandbox):
@@ -99,7 +100,14 @@ def test_runtime_error_details_only_on_samples(local_sandbox):
     report = run(local_sandbox, code)
     assert report.verdict == "RE"
     assert "secret 1" in report.results[0].error
-    assert report.results[1].error == HIDDEN_ERROR
+    assert report.results[1].verdict == "skipped" and report.results[1].error is None
+
+
+def test_hidden_runtime_error_is_opaque(local_sandbox):
+    code = "class Solution:\n    def add(self, a, b):\n        if a == 5: raise ValueError(f'secret {a}')\n        return a + b\n"
+    report = run(local_sandbox, code)
+    assert [r.verdict for r in report.results] == ["AC", "RE"]
+    assert report.results[1].error == HIDDEN_ERROR and report.error == HIDDEN_ERROR
 
 
 def test_syntax_error_is_compile_error(local_sandbox):
@@ -128,8 +136,9 @@ def test_slow_test_is_tle(local_sandbox):
     assert report.verdict == "TLE"
 
 
-def test_forged_result_lines_cannot_fake_accept(local_sandbox):
-    # The marker is visible to user code, but expected outputs are not.
+def test_forged_result_lines_are_ignored(local_sandbox):
+    # The marker is visible to user code, but a line out of protocol order counts for nothing:
+    # the forged "test 1 returned 0" is dropped and the real results decide.
     code = (
         "import sys, json\n"
         "class Solution:\n"
@@ -139,4 +148,4 @@ def test_forged_result_lines_cannot_fake_accept(local_sandbox):
         "        return a + b\n"
     )
     report = run(local_sandbox, code)
-    assert report.results[1].verdict == "WA"
+    assert [r.verdict for r in report.results] == ["AC", "AC"]

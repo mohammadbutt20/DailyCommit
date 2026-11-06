@@ -22,7 +22,9 @@ class LocalProcessSandbox:
         with tempfile.TemporaryDirectory() as tmp:
             for name, content in req.files.items():
                 Path(tmp, name).write_text(content, encoding="utf-8")
-            argv = [sys.executable] + [a.replace("/work", tmp) for a in req.argv[1:]]
+            # The real command wraps the harness in `sh -c 'ulimit ...; exec python3 ...'`; here
+            # just run the harness, with the run's marker (always the last argument).
+            argv = [sys.executable, str(Path(tmp, "harness.py")), req.argv[-1]]
             proc = subprocess.Popen(
                 argv,
                 cwd=tmp,

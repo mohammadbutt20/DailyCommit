@@ -47,7 +47,7 @@ flowchart TB
 | `worker` | arq (Python) | Pulls submission jobs, runs them in sandbox containers, streams verdicts. Scales horizontally. |
 | `scheduler` | arq cron (Python) | Daily rollover: streak evaluation and next daily problem. Runs exactly one replica. |
 | `postgres` | PostgreSQL 16 | Durable state. "If it's not in here, it didn't happen." |
-| `redis` | Redis 7 | arq job queue, cache (leaderboards, today's problem), pub/sub for live updates. |
+| `redis` | Redis 7 | arq job queues, pub/sub for live updates, rate limits, and the leaderboard cache (the only cache). |
 | sandbox | Docker, one image per language | Throwaway, locked-down container per submission. |
 
 `api`, `worker` and `scheduler` are built from **one backend image** and differ only by command.
@@ -146,16 +146,27 @@ Numbers match the system map.
 2. **Save "pending".** Insert a `submissions` row with `status=queued`.
 3. **Enqueue.** Enqueue the arq job `run_submission(submission_id)`. The browser subscribes to `submission:{id}` over `/ws`, **then** fetches the submission over REST. This order guarantees no result is missed.
 4. **Grab next ticket.** A worker picks up the job, sets `status=running`, loads the code, the problem signature and the test inputs, and generates the harness for that language.
-5. **Run.** The worker creates a sandbox container (see §5), copies in the code, harness and **inputs only** with `put_archive`, starts it, and streams stdout.
-6. **Output.** The harness compiles (Java/C++), then runs tests sequentially. After each test it prints one line to the original stdout, prefixed with a per-run marker: `{"i": 3, "out": <json>, "ms": 12, "err": null}`. The user's own stdout/stderr is redirected and captured (truncated) separately.
-7. **Ring the bell.** For each line, the worker compares `out` to the expected output **it holds** (exact / unordered / float tolerance per problem), then publishes the per-test verdict on Redis channel `submission:{id}` (channel name = WebSocket topic name).
+5. **Run.** The worker creates a sandbox container (see §5), streams in the code, harness and **inputs only** (a tar on the container's stdin), starts it, and streams stdout. A `submit` uses **two containers** (`runner.judge_submission`): the sample tests run alone first, with full details for the user. Only if they all pass do the hidden tests run, alone, in a second container that returns verdicts and times only. If a sample fails, the hidden tests are `skipped`. A `run` is the samples-only container.
+6. **Output.** The harness compiles (Java/C++), prints `{"ready": true}`, then runs tests sequentially. After each test it prints one line to the original stdout, prefixed with a per-run marker: `{"i": 3, "out": <json>, "ms": 12, "err": null}`. The user's own stdout/stderr is redirected and captured (truncated) separately.
+7. **Ring the bell.** The worker reads those lines in protocol order only (the first `ready`, then `i` = 0, 1, 2, …; anything else is ignored). It times each test with **its own clock**, as the gap since the previous accepted line. It compares `out` to the expected output **it holds** (exact / unordered / float tolerance per problem), then publishes the per-test verdict on Redis channel `submission:{id}` (channel name = WebSocket topic name).
 8. **Bell heard.** Each API process runs one Redis pub/sub listener that fans messages out to its sockets subscribed to that topic.
 9. **Pushed live.** The browser renders test-by-test results.
-10. **Save final verdict.** The worker writes `submission_results` and the final `verdict`, `passed/total`, and `runtime_ms`. For an accepted `submit`, it also inserts `group_day_solves` for every group of that user whose today-problem (in the group's timezone) is this problem, invalidates leaderboard caches, and publishes to `group:{id}`.
+10. **Save final verdict.** The worker writes `submission_results` and the final `verdict`, `passed/total`, and `runtime_ms`, with the submission row locked (`services/submissions.finalize_submission`). For an accepted `submit`, it also inserts `group_day_solves` for every group of that user whose today-problem (in the group's timezone) is this problem, invalidates leaderboard caches, and publishes to `group:{id}`.
 
-**Verdicts:** `AC` accepted, `WA` wrong answer, `TLE` time limit, `MLE` memory limit (container OOMKilled), `RE` runtime error, `CE` compile error, `IE` internal error (our fault; the job is retried once).
+**Verdicts:** `AC` accepted, `WA` wrong answer, `TLE` time limit, `MLE` memory limit (see §5), `RE` runtime error, `CE` compile error, `IE` internal error (our fault).
 
 On TLE/MLE/RE the container is killed. The current test gets that verdict and the remaining tests are marked `skipped`.
+
+**Retries and recovery.** A job gets at most two tries (`max_tries = 2`):
+- **Internal error on the first try** (e.g. a Docker failure): the job is retried after 2 s.
+- **Worker crash:** arq runs the job again once its in-progress key expires, about `job_timeout` + 10 s = 190 s later.
+- **Anything still unjudged:** a job lost from Redis, a failed enqueue, a job timeout, or a second failure. Every minute the scheduler marks any submission still `queued`/`running` 10 minutes (`SUBMISSION_STALE_AFTER_S`) after creation as `IE` and publishes its `final` event. Nothing stays pending forever.
+
+IE is *provisional*. A submission is final once it's `done` with a real verdict, and a later job that gets one replaces an IE:
+- The final write locks the row, so the first real result wins and any later attempt is discarded (no write, no credit, no events).
+- A solve is credited only by that winning write, and `group_day_solves` is unique per (group, day, user).
+- The sweep only ever touches `queued`/`running` rows.
+- The editor keeps listening after an IE `final` (and polls every 10 s while it shows IE), so it ends on the real verdict.
 
 ---
 
@@ -174,11 +185,19 @@ Per submission, one container:
 | CPU | `--cpus 1` |
 | Processes | `--pids-limit 64` (fork bombs) |
 | Files / output | `ulimit nofile`, `fsize`. The worker stops reading after 1 MB of stdout. |
-| Time | Per-test limit from `problem.yaml`, plus an overall wall-clock deadline = Σ test limits + compile budget (Java/C++ ~10 s). The worker kills the container at the deadline. |
+| Time | Per-test limit from `problem.yaml`, measured by the **worker's clock**: the gap between a test's result line and the previous accepted line, minus 250 ms of slack for serialization and Docker's log relay (`TIMING_SLACK_MS`). The time the program reports can only make the result stricter. A watchdog kills the container after the limit + 0.5 s without an accepted line, and at the overall deadline (Σ test budgets + start-up/compile budget, Java/C++ 10 s). |
 | Lifetime | Removed after the run (`remove=True` plus a reaper for orphans on worker start) |
 | Secrets | No env vars or mounts from the host. Expected outputs never enter the container. |
+| Memory verdict | MLE if the kernel OOM-killed the container, if the harness exits 137 on an allocation failure (`MemoryError` / `OutOfMemoryError` / `bad_alloc`), or if the run timed out while at its memory limit. For the last case, a sampler thread reads one-shot `docker stats` (0.5 s client timeout) while a test has been silent for over half its budget. The watchdog uses the latest reading (≥ 90% of the limit in use, ignoring reclaimable page cache) and never waits for Docker. No fresh reading means TLE. |
 
-**Forgery resistance:** user code shares a process with the harness, so it could print fake result lines. That can't produce a false `AC`, because the comparison against hidden expected outputs happens in the worker.
+**Forgery resistance:** user code shares a process with the harness, so it can read the run's marker and print lines that look like the harness's. It gains nothing:
+- **Correctness:** outputs are compared in the worker, against expected values the container never sees.
+- **Time:** lines count only in protocol order and are timed by the worker. A forged `ready`, a duplicate, or a result out of order buys no time, and a forged `ms` can't lower a test's time.
+- **Information:** a container that holds hidden-test inputs never returns anything the program controls (stdout, return values, error text, compiler output), so hidden inputs can't be printed back to the browser.
+
+What remains:
+- **Verdicts and times:** per-test verdicts and times of hidden tests are still visible, a few bits per submission (and submissions are rate-limited).
+- **Work across tests:** all tests of a run share one process, so a solution can overlap work across tests (e.g. a background thread). The run's overall deadline still caps it. A fresh process per test would close this; it isn't built.
 
 **Threats the adversarial suite must contain** (per language): infinite loop, fork bomb, memory bomb, network access attempt, disk fill, huge stdout, reading env/filesystem for secrets, writing outside `/work`, sleeping past the deadline, killing the harness.
 
@@ -221,7 +240,7 @@ limits: { time_ms: 2000, memory_mb: 256 }
 - **Harness:** generated per language from the signature. It reads the inputs JSON, deserializes the typed args, calls the user function inside a try/catch, serializes the return value, and times each call. Java uses Gson and C++ uses nlohmann/json; both are baked into the images.
 - **Validation:** `sync-problems` checks the schema and type-checks every test against the signature. It also **runs each `solutions/ref.*` through the real sandbox** and fails if any reference solution doesn't get AC, which verifies the hand-written expected outputs. This applies to local problems and judge packs alike.
 - **Upsert:** by `slug`, with `content_hash` to skip unchanged problems. Removing a problem from the repo marks it `retired` rather than deleting it (submissions reference it).
-- **Exposure:** the API sends the statement, sample tests and starter code. Hidden tests and expected outputs never leave the backend.
+- **Exposure:** the API sends the statement, sample tests and starter code. Hidden tests' inputs and expected outputs are never returned by the API. Hidden inputs do enter the sandbox (the program needs them), but only in a container whose program-controlled output is never shown (§4 step 5, §5). Expected outputs never leave the worker.
 - **Content:** the daily pool is imported LeetCode problems that have a judge pack (below). Local problems are for original content and are the fallback when no packed LeetCode problem exists.
 
 ### LeetCode problems
@@ -299,7 +318,9 @@ Creating a group assigns today's problem immediately. A leader override for tomo
 - **Daily:** today's solvers, ordered by `solved_at`.
 - **Weekly** (Mon–Sun, group-local): number of daily problems solved, tie-broken by total solve time after each day's start.
 
-Leaderboards are cached in Redis under `lb:{group}:{period}:{day}` and invalidated on each solve.
+Leaderboards are cached in Redis under `lb:{group}:{period}:{day}` (5-minute TTL) and invalidated on each solve. Nothing else is cached; today's problem is read from Postgres.
+
+**`recover_submissions`** runs every minute in the same `scheduler` process: it marks stale `queued`/`running` submissions as `IE` (see §4, retries and recovery). Idempotent, like the rollover.
 
 **P1 reminder job:** an evening cron warns about members who haven't solved yet (via the Discord bot). Stubbed in P0.
 
@@ -439,8 +460,9 @@ The dev compose bind-mounts source for hot reload (`uvicorn --reload`, `next dev
 |---|---|
 | `domain/` unit tests | Streak evaluation edge cases (late joiner, paused, empty group, missed day), multi-day catch-up, DST transitions in `timeutil`, daily pick rotation, leaderboard ordering, activity feed merge/dedupe. P1: SM-2 and ELO. |
 | Web unit tests | `node --test` (Node 22 runs TypeScript directly, no extra deps) for pure frontend logic such as `web/src/lib/feed.ts`; part of `make test`. |
-| API tests | pytest + httpx against a disposable Postgres/Redis: auth/session, group join, authorization checks, problem exposure (hidden tests never returned) |
-| Sandbox suite (`-m sandbox`) | Needs Docker. Adversarial programs per language (§5 threats) must yield TLE/MLE/RE and leave no containers behind; AC/WA/CE fixtures per language. |
+| Runner protocol | Without Docker: protocol order and worker-measured time with a fake clock, opaque runs, the memory check, two-phase judging (`test_runner_protocol.py`). |
+| Integration (Postgres) | `test_submission_recovery.py` rebuilds a throwaway `<db>_test` database with the migrations and judges real submissions: a late AC after the sweep wins, a retry after the sweep runs, two racing jobs record one result and one solve, a real result is never replaced. Skipped when no Postgres is reachable. Planned: API tests (auth/session, group join, authorization, problem exposure). |
+| Sandbox suite (`-m sandbox`) | Needs Docker. Adversarial programs per language (§5 threats) must yield TLE/MLE/RE and leave no containers behind; AC/WA/CE fixtures per language. Hardening (`test_sandbox_hardening.py`, Python/Java/C++): forged timing is still TLE; hidden inputs never leak through output, exceptions, return values or compiler/import errors; memory bombs are MLE (5 runs each) while loops holding memory stay TLE; a failing or hanging stats call falls back to TLE without delaying the kill. |
 | Problem validation | `make validate-problems` / `make sync-problems` run every reference solution (local problems and judge packs) in every provided language in the real sandbox; the sandbox suite also checks every pack's references. Unit tests cover pack loading/validation and the Python references without Docker. |
 | Later | k6 or Locust load test (queue throughput, p50/p95 verdict latency, for the PRD's performance metric); Playwright smoke test of the submit flow |
 
