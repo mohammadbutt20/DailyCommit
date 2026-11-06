@@ -1,0 +1,8 @@
+# Judge pack for https://leetcode.com/problems/3sum/ (statement comes from the import).
+slug: 3sum
+function: threeSum
+params:
+  - { name: nums, type: "int[]" }
+returns: "int[][]"
+compare: unordered_nested
+limits: { time_ms: 2000, memory_mb: 256 }

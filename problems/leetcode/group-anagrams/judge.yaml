@@ -1,0 +1,8 @@
+# Judge pack for https://leetcode.com/problems/group-anagrams/ (statement comes from the import).
+slug: group-anagrams
+function: groupAnagrams
+params:
+  - { name: strs, type: "string[]" }
+returns: "string[][]"
+compare: unordered_nested
+limits: { time_ms: 2000, memory_mb: 256 }

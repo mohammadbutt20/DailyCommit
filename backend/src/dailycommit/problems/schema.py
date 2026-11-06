@@ -87,7 +87,7 @@ class FloatCompare(BaseModel):
     tolerance: float = Field(alias="float", gt=0)
 
 
-Compare = Literal["exact", "unordered"] | FloatCompare
+Compare = Literal["exact", "unordered", "unordered_nested"] | FloatCompare
 
 
 class ProblemSpec(BaseModel):

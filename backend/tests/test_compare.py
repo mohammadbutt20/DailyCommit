@@ -32,3 +32,23 @@ def test_float_tolerance():
     assert outputs_match([1.0000001, 2.0], [1.0, 2.0], mode)
     assert not outputs_match(1.01, 1.0, mode)
     assert outputs_match(1e9 + 1, 1e9, mode)  # relative for large values
+
+
+def test_unordered_nested_ignores_order_of_groups_and_within_groups():
+    expected = [["ate", "eat", "tea"], ["nat", "tan"], ["bat"]]
+    assert outputs_match(
+        [["bat"], ["tan", "nat"], ["tea", "ate", "eat"]], expected, "unordered_nested"
+    )
+    assert outputs_match([[-1, 0, 1], [-1, -1, 2]], [[-1, -1, 2], [1, 0, -1]], "unordered_nested")
+
+
+def test_unordered_nested_still_checks_contents_and_multiplicity():
+    assert not outputs_match([["bat"], ["tan"]], [["bat"], ["nat", "tan"]], "unordered_nested")
+    assert not outputs_match([[0, 0, 0], [0, 0, 0]], [[0, 0, 0]], "unordered_nested")  # duplicates
+    assert not outputs_match([[1, 2]], [[1, 2, 2]], "unordered_nested")
+    assert not outputs_match("x", [["x"]], "unordered_nested")
+    assert outputs_match([], [], "unordered_nested")
+
+
+def test_plain_unordered_still_cares_about_inner_order():
+    assert not outputs_match([["tan", "nat"]], [["nat", "tan"]], "unordered")

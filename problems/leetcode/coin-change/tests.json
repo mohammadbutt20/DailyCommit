@@ -1,0 +1,14 @@
+[
+  {"input": {"coins": [1, 2, 5], "amount": 11}, "expected": 3, "sample": true},
+  {"input": {"coins": [2], "amount": 3}, "expected": -1, "sample": true},
+  {"input": {"coins": [1], "amount": 0}, "expected": 0, "sample": true},
+  {"input": {"coins": [2], "amount": 1}, "expected": -1, "sample": false},
+  {"input": {"coins": [1], "amount": 1}, "expected": 1, "sample": false},
+  {"input": {"coins": [186, 419, 83, 408], "amount": 6249}, "expected": 20, "sample": false},
+  {"input": {"coins": [2, 5, 10, 1], "amount": 27}, "expected": 4, "sample": false},
+  {"input": {"coins": [5], "amount": 10000}, "expected": 2000, "sample": false},
+  {"input": {"coins": [2147483647], "amount": 2}, "expected": -1, "sample": false},
+  {"input": {"coins": [1, 3, 4], "amount": 6}, "expected": 2, "sample": false},
+  {"input": {"coins": [3, 7], "amount": 10000}, "expected": 1432, "sample": false},
+  {"input": {"coins": [7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47], "amount": 9999}, "expected": 213, "sample": false}
+]

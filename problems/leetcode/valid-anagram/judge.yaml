@@ -1,0 +1,8 @@
+# Judge pack for https://leetcode.com/problems/valid-anagram/ (statement comes from the import).
+slug: valid-anagram
+function: isAnagram
+params:
+  - { name: s, type: "string" }
+  - { name: t, type: "string" }
+returns: "bool"
+limits: { time_ms: 2000, memory_mb: 256 }

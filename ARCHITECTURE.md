@@ -114,7 +114,7 @@ backend/                      one Python project (uv), several entrypoints
     sandbox/
       backend.py              SandboxBackend interface + DockerSandbox implementation
       runner.py               orchestrates compile/run, parses harness output
-      compare.py              exact / unordered / float-tolerance comparison
+      compare.py              exact / unordered / unordered_nested / float-tolerance comparison
       languages.py            registry of supported languages (image, harness, limits)
       codegen/                starter-code + harness templates per language
     problems/                 CLI: validate + sync problems/ → DB
@@ -149,7 +149,7 @@ Numbers match the system map.
 4. **Grab next ticket.** A worker picks up the job, sets `status=running`, loads the code, the problem signature and the test inputs, and generates the harness for that language.
 5. **Run.** The worker creates a sandbox container (see §5), streams in the code, harness and **inputs only** (a tar on the container's stdin), starts it, and streams stdout. A `submit` uses **two containers** (`runner.judge_submission`): the sample tests run alone first, with full details for the user. Only if they all pass do the hidden tests run, alone, in a second container that returns verdicts and times only. If a sample fails, the hidden tests are `skipped`. A `run` is the samples-only container.
 6. **Output.** The harness compiles (Java/C++), prints `{"ready": true}`, then runs tests sequentially. After each test it prints one line to the original stdout, prefixed with a per-run marker: `{"i": 3, "out": <json>, "ms": 12, "err": null}`. The user's own stdout/stderr is redirected and captured (truncated) separately.
-7. **Ring the bell.** The worker reads those lines in protocol order only (the first `ready`, then `i` = 0, 1, 2, …; anything else is ignored). It times each test with **its own clock**, as the gap since the previous accepted line. It compares `out` to the expected output **it holds** (exact / unordered / float tolerance per problem), then publishes the per-test verdict on Redis channel `submission:{id}` (channel name = WebSocket topic name).
+7. **Ring the bell.** The worker reads those lines in protocol order only (the first `ready`, then `i` = 0, 1, 2, …; anything else is ignored). It times each test with **its own clock**, as the gap since the previous accepted line. It compares `out` to the expected output **it holds** (exact / unordered / unordered_nested / float tolerance per problem), then publishes the per-test verdict on Redis channel `submission:{id}` (channel name = WebSocket topic name).
 8. **Bell heard.** Each API process runs one Redis pub/sub listener that fans messages out to its sockets subscribed to that topic.
 9. **Pushed live.** The browser renders test-by-test results.
 10. **Save final verdict.** The worker writes `submission_results` and the final `verdict`, `passed/total`, and `runtime_ms`, with the submission row locked (`services/submissions.finalize_submission`). For an accepted `submit`, it also inserts `group_day_solves` for every group of that user whose today-problem (in the group's timezone) is this problem, invalidates leaderboard caches, and publishes to `group:{id}`.
@@ -223,7 +223,7 @@ params:
   - { name: nums, type: "int[]" }
   - { name: target, type: int }
 returns: "int[]"
-compare: unordered          # exact | unordered | { float: 1e-6 }
+compare: unordered          # exact | unordered | unordered_nested | { float: 1e-6 }
 limits: { time_ms: 2000, memory_mb: 256 }
 ```
 
@@ -261,6 +261,8 @@ problems/leetcode/two-sum/
 
 - **No statement in the repo.** Title, difficulty, topics and statement come from the imported row; a `statement.md` in a pack fails validation. Hidden tests are written by us, never copied from LeetCode.
 - **Validation** is the same as for local problems, plus: every language has a reference solution, the folder matches the slug, and no local problem uses the slug. Every reference must AC in the real sandbox before a pack loads; `sync --no-verify` skips packs entirely.
+- **Samples = LeetCode's examples, checked:** `make check-examples` (`python -m dailycommit.problems check-examples`) parses the "Input: … Output: …" examples out of each pack's imported statement (`leetcode/examples.py`) and fails unless the pack's samples are exactly those, in order, with outputs compared by the pack's compare mode. It reads the statement from the database and stores nothing.
+- **Compare modes:** besides `exact`, `unordered` and float tolerance, `unordered_nested` ignores the order of the list and of each inner list (3sum, group-anagrams).
 - **Sync** (`make sync-problems`) attaches each pack to its `source='leetcode'` row (importing it first if it's missing, which needs LeetCode to be reachable). It sets `signature`/`compare`/`limits`/`judge_hash` and replaces `test_cases` when `judge_hash` (over `judge.yaml`, `tests.json` and the solutions) changed. A pack removed from the repo detaches: its row loses the judge fields and tests and goes back to LeetCode-only (not retired).
 - **Judgeable** means `signature IS NOT NULL` (`Problem.judgeable`, exposed as `judgeable` in the API). Judgeable problems get the normal editor workspace and accept submissions whatever their `source`; for the rest, `POST /submissions` returns 400 and the UI shows the LeetCode flow.
 
@@ -490,7 +492,7 @@ Each later slice is independent and should land as its own change:
 | 3. Per-group timezone (**built**) | `groups.timezone` column + migration 0002, `GET /groups/timezones`, timezone picker on create, per-group day in `record_solves` | `services/clock.py` (`group_tz`), `services/solves.py` |
 | 4. VPS deploy | `compose.prod.yaml`, Caddy domain + HTTPS, production web build, backups, `SANDBOX_RUNTIME=runsc` | `infra/` |
 | 5. Load test | k6/Locust: queue throughput, p50/p95 verdict latency | new `loadtest/` |
-| 6. Judge packs (**built**) | Judge imported LeetCode problems here: `problems/leetcode/<slug>/` packs (pilot: two-sum, valid-parentheses, merge-intervals), migration 0004 (`judge_hash`), judgeable-only daily pool, editor workspace for packed LeetCode problems | `problems/loader.py`, `problems/__main__.py`, `domain/daily_pick.py`, `services/daily.py`, today page |
+| 6. Judge packs (**built**) | Judge imported LeetCode problems here: `problems/leetcode/<slug>/` packs (20: 9 Easy, 9 Medium, 2 Hard; samples checked against LeetCode with `make check-examples`), migration 0004 (`judge_hash`), judgeable-only daily pool, editor workspace for packed LeetCode problems | `problems/loader.py`, `problems/__main__.py`, `domain/daily_pick.py`, `services/daily.py`, today page |
 
 P1 features follow in PRD priority order, at the extension points in §11.
 

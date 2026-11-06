@@ -34,12 +34,15 @@ Rules:
 - Judge packs: the `sample` tests are LeetCode's examples, transcribed. Hidden tests are our own
   edge cases, never copied from LeetCode. Keep them within the problem's stated constraints,
   and make sure each has a single correct answer (or pick a `compare` mode that accepts all).
-- `compare`: `exact` (default), `unordered` (top-level list order doesn't matter), or
-  `{ float: 1e-6 }`.
+- `compare`: `exact` (default), `unordered` (top-level list order doesn't matter),
+  `unordered_nested` (neither does the order inside each inner list, e.g. 3sum's triplets or
+  group-anagrams' groups), or `{ float: 1e-6 }`.
 - Types: `int long double bool string`, plus `[]` and `[][]` of each.
 
 Check your work with `make validate-problems`, which also runs every reference solution in the
-sandbox. Then `make sync-problems` loads changes into the database. A judge pack only loads if
+sandbox. For a judge pack, also run `make check-examples`: it reads LeetCode's examples from the
+imported statement (in the database, never the repo) and fails unless the pack's samples are
+exactly those examples, in order. Import the problem first (`make import-leetcode LC=<slug>`). Then `make sync-problems` loads changes into the database. A judge pack only loads if
 every one of its reference solutions passes; it attaches to the imported LeetCode problem
 (importing it first if needed). Only problems that can be judged here are auto-picked as daily
 problems.

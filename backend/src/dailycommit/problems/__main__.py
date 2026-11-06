@@ -1,10 +1,12 @@
-"""python -m dailycommit.problems {validate,sync} [--no-verify]
+"""python -m dailycommit.problems {validate,sync,check-examples} [--no-verify]
 
 validate: check every local problem and judge pack (and, unless --no-verify, run every
           reference solution in the sandbox). Touches no database.
 sync:     validate, then upsert local problems, retire ones no longer in the repo, and attach
           judge packs to their imported LeetCode problems (importing any that are missing).
           Judge packs only load after their reference solutions pass, so --no-verify skips them.
+check-examples: compare every judge pack's sample tests with the examples in LeetCode's
+          statement, as imported into the database (make check-examples). Runs nothing.
 
 Verification needs the Docker socket, so run it in the worker container (make sync-problems).
 """
@@ -20,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dailycommit.config import settings
 from dailycommit.db import SessionLocal
 from dailycommit.leetcode import client as lc
+from dailycommit.leetcode.examples import ExampleParseError, parse_examples, sample_mismatches
 from dailycommit.leetcode.importer import ensure_leetcode_problem
 from dailycommit.models import Problem, TestCase
 from dailycommit.problems.loader import (
@@ -157,7 +160,7 @@ async def sync_judge_packs(packs: list[LoadedJudgePack]) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m dailycommit.problems")
-    parser.add_argument("command", choices=["validate", "sync"])
+    parser.add_argument("command", choices=["validate", "sync", "check-examples"])
     parser.add_argument(
         "--no-verify",
         action="store_true",
@@ -172,6 +175,8 @@ def main() -> int:
         print(f"invalid problem: {e}", file=sys.stderr)
         return 1
     print(f"{len(problems)} problems and {len(packs)} judge packs valid")
+    if args.command == "check-examples":
+        return asyncio.run(check_examples(packs))
 
     if not args.no_verify:
         failures = verify([*problems, *packs])
@@ -181,6 +186,35 @@ def main() -> int:
 
     if args.command == "sync":
         return asyncio.run(sync_all(problems, packs, load_packs=not args.no_verify))
+    return 0
+
+
+async def check_examples(packs: list[LoadedJudgePack]) -> int:
+    """Each pack's samples must be exactly LeetCode's examples (problems/README.md)."""
+    failures: list[str] = []
+    async with SessionLocal() as db:
+        for pack in packs:
+            row = await db.scalar(
+                select(Problem).where(Problem.slug == pack.slug, Problem.source == "leetcode")
+            )
+            if row is None or not row.statement_html:
+                failures.append(f"{pack.slug}: not imported (make import-leetcode LC={pack.slug})")
+                continue
+            try:
+                examples = parse_examples(
+                    row.statement_html, [p.name for p in pack.signature.params]
+                )
+            except ExampleParseError as e:
+                failures.append(f"{pack.slug}: can't read LeetCode's examples: {e}")
+                continue
+            samples = [(t.input, t.expected) for t in pack.tests if t.sample]
+            problems = sample_mismatches(samples, examples, pack.compare)
+            print(f"  {'FAIL' if problems else 'ok'} {pack.slug}: {len(samples)} samples")
+            failures += [f"{pack.slug}: {p}" for p in problems]
+    if failures:
+        print("samples that don't match LeetCode:\n  " + "\n  ".join(failures), file=sys.stderr)
+        return 1
+    print(f"all {len(packs)} judge packs' samples match LeetCode's examples")
     return 0
 
 

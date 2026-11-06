@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/contains-duplicate/ (statement comes from the import).
+slug: contains-duplicate
+function: containsDuplicate
+params:
+  - { name: nums, type: "int[]" }
+returns: "bool"
+limits: { time_ms: 2000, memory_mb: 256 }

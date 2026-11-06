@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/product-of-array-except-self/ (statement comes from the import).
+slug: product-of-array-except-self
+function: productExceptSelf
+params:
+  - { name: nums, type: "int[]" }
+returns: "int[]"
+limits: { time_ms: 2000, memory_mb: 256 }

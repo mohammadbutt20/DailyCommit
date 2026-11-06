@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/trapping-rain-water/ (statement comes from the import).
+slug: trapping-rain-water
+function: trap
+params:
+  - { name: height, type: "int[]" }
+returns: "int"
+limits: { time_ms: 2000, memory_mb: 256 }

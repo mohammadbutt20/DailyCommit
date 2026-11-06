@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/longest-substring-without-repeating-characters/ (statement comes from the import).
+slug: longest-substring-without-repeating-characters
+function: lengthOfLongestSubstring
+params:
+  - { name: s, type: "string" }
+returns: "int"
+limits: { time_ms: 2000, memory_mb: 256 }

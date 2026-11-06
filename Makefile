@@ -2,7 +2,7 @@
 COMPOSE := docker compose -f infra/compose.yaml
 EXEC := $(COMPOSE) exec -T
 
-.PHONY: help demo up down logs ps reset-db sandbox-images migrate validate-problems sync-problems \
+.PHONY: help demo up down logs ps reset-db sandbox-images migrate validate-problems sync-problems check-examples \
 	seed test test-sandbox lint gen-api import-leetcode
 
 help: ## List targets
@@ -37,6 +37,9 @@ migrate: ## Apply database migrations
 validate-problems: ## Check problems/ and run reference solutions in the sandbox (no DB writes)
 	$(EXEC) worker python -m dailycommit.problems validate
 
+check-examples: ## Check judge packs' samples against LeetCode's examples (imported statements)
+	$(EXEC) api python -m dailycommit.problems check-examples
+
 sync-problems: ## Validate problems/ (+ judge packs) and load them into the database
 	$(EXEC) worker python -m dailycommit.problems sync
 
@@ -46,7 +49,7 @@ LC ?= --plan top-interview-150
 import-leetcode: ## Import LeetCode problems as the daily pool (LC="..." to choose which)
 	$(EXEC) api python -m dailycommit.leetcode import $(LC)
 
-seed: ## Demo users, group (invite DEMO2026) and a week of history
+seed: ## Demo users, group (invite DEMO2026) and three weeks of history
 	$(EXEC) api python -m dailycommit.seed
 
 test: ## Backend + web unit tests (no Docker sandbox needed)

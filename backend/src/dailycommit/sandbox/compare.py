@@ -6,7 +6,17 @@ from typing import Any
 
 
 def outputs_match(actual: Any, expected: Any, mode: Any) -> bool:
-    """mode: "exact" | "unordered" | {"float": tolerance}"""
+    """mode: "exact" | "unordered" | "unordered_nested" | {"float": tolerance}
+
+    unordered: the top-level list's order doesn't matter.
+    unordered_nested: neither does the order inside each element list (one level down), e.g.
+    3sum's triplets or group-anagrams' groups."""
+    if mode == "unordered_nested":
+        if not (isinstance(actual, list) and isinstance(expected, list)):
+            return False
+        inner = [_canonical_sort(v) if isinstance(v, list) else v for v in actual]
+        want = [_canonical_sort(v) if isinstance(v, list) else v for v in expected]
+        return outputs_match(inner, want, "unordered")
     if mode == "unordered":
         if not (isinstance(actual, list) and isinstance(expected, list)):
             return False

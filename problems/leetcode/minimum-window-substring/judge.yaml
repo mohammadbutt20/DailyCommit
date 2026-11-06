@@ -1,0 +1,8 @@
+# Judge pack for https://leetcode.com/problems/minimum-window-substring/ (statement comes from the import).
+slug: minimum-window-substring
+function: minWindow
+params:
+  - { name: s, type: "string" }
+  - { name: t, type: "string" }
+returns: "string"
+limits: { time_ms: 2000, memory_mb: 256 }

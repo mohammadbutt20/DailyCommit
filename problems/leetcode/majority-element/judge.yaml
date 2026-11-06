@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/majority-element/ (statement comes from the import).
+slug: majority-element
+function: majorityElement
+params:
+  - { name: nums, type: "int[]" }
+returns: "int"
+limits: { time_ms: 2000, memory_mb: 256 }

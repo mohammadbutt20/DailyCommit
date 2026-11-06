@@ -1,0 +1,8 @@
+# Judge pack for https://leetcode.com/problems/coin-change/ (statement comes from the import).
+slug: coin-change
+function: coinChange
+params:
+  - { name: coins, type: "int[]" }
+  - { name: amount, type: "int" }
+returns: "int"
+limits: { time_ms: 2000, memory_mb: 256 }

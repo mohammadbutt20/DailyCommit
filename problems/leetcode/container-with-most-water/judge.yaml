@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/container-with-most-water/ (statement comes from the import).
+slug: container-with-most-water
+function: maxArea
+params:
+  - { name: height, type: "int[]" }
+returns: "int"
+limits: { time_ms: 2000, memory_mb: 256 }

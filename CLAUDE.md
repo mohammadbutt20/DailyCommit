@@ -34,6 +34,7 @@ make sandbox-images   # build the per-language sandbox images
 make migrate          # alembic upgrade head
 make validate-problems  # check problems/ + run reference solutions (no DB writes)
 make sync-problems    # validate + load problems/ into the DB
+make check-examples   # judge packs' samples == LeetCode's examples (reads imported statements)
 make import-leetcode  # import LeetCode problems (default Top Interview 150; LC="--plan leetcode-75" etc.)
 make seed             # demo users/group/history; use dev login to sign in
 make test             # backend unit tests + web unit tests (node --test src/**/*.test.ts)

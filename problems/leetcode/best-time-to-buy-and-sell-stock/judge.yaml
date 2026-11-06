@@ -1,0 +1,7 @@
+# Judge pack for https://leetcode.com/problems/best-time-to-buy-and-sell-stock/ (statement comes from the import).
+slug: best-time-to-buy-and-sell-stock
+function: maxProfit
+params:
+  - { name: prices, type: "int[]" }
+returns: "int"
+limits: { time_ms: 2000, memory_mb: 256 }

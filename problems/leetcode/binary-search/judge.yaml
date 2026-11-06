@@ -1,0 +1,8 @@
+# Judge pack for https://leetcode.com/problems/binary-search/ (statement comes from the import).
+slug: binary-search
+function: search
+params:
+  - { name: nums, type: "int[]" }
+  - { name: target, type: "int" }
+returns: "int"
+limits: { time_ms: 2000, memory_mb: 256 }

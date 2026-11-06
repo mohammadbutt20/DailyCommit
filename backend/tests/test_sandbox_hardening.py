@@ -10,10 +10,13 @@ import time
 
 import pytest
 
+from dailycommit.problems.loader import load_judge_packs
 from dailycommit.problems.schema import Signature
 from dailycommit.sandbox.backend import DockerSandbox
 from dailycommit.sandbox.languages import LANGUAGES
 from dailycommit.sandbox.runner import TestInput, judge_submission, run_tests
+from dailycommit.seed_attempts import ATTEMPTS
+from tests.conftest import PROBLEMS_DIR
 
 pytestmark = pytest.mark.sandbox
 
@@ -301,3 +304,30 @@ def test_memory_bomb_without_stats_is_never_accepted(sandbox, lang):
     broken.stats_api = BrokenStats()
     report = run(broken, lang, BOMB[lang], limits=BOMB_LIMITS)
     assert report.verdict in {"MLE", "TLE"}
+
+
+# --- the demo's seeded time-limit attempts are real ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name", [n for n, a in ATTEMPTS.items() if a.verdict == "TLE"], ids=lambda n: n
+)
+def test_seeded_time_limit_attempts_are_what_our_judge_returns(sandbox, name):
+    a = ATTEMPTS[name]
+    pack = next(p for p in load_judge_packs(PROBLEMS_DIR) if p.slug == a.slug)
+    tests = [
+        TestInput(t.input, t.expected, t.sample)
+        for t in sorted(pack.tests, key=lambda t: not t.sample)
+    ]
+    report = judge_submission(
+        sandbox,
+        LANGUAGES["python"],
+        a.code,
+        pack.signature,
+        tests,
+        pack.compare,
+        pack.limits.model_dump(),
+    )
+    letters = {"AC": "A", "WA": "W", "TLE": "T", "skipped": "s"}
+    assert report.verdict == "TLE"
+    assert "".join(letters[r.verdict] for r in report.results) == a.results
